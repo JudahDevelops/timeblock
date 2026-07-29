@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { isSameDay } from "date-fns";
 
 import {
+  BLOCK_GAP,
+  BLOCK_INSET,
+  BLOCK_MIN_HEIGHT,
+  BLOCK_TRAIL,
   clampToDay,
   dayAtMinutes,
   DAY_HEIGHT,
@@ -835,10 +839,17 @@ const DayColumn = memo(function DayColumn({
       {/* Live preview while dragging out a brand-new block. */}
       {preview && !preview.id ? (
         <div
-          className="border-line bg-surface-raised/80 pointer-events-none absolute inset-x-1 rounded-md border"
+          className="border-line bg-surface-raised/80 pointer-events-none absolute rounded-md border"
+          // Inset exactly as the real block will be, so nothing shifts under the
+          // pointer at the moment the drag is released.
           style={{
             top: minutesToY(preview.startMinutes),
-            height: minutesToY(preview.endMinutes - preview.startMinutes),
+            height: Math.max(
+              minutesToY(preview.endMinutes - preview.startMinutes) - BLOCK_GAP,
+              BLOCK_MIN_HEIGHT,
+            ),
+            left: BLOCK_INSET,
+            right: BLOCK_TRAIL,
           }}
         />
       ) : null}

@@ -21,6 +21,21 @@ export const DAY_HEIGHT = (MINUTES_PER_DAY / 60) * HOUR_HEIGHT;
 /** Width of the hour-label rail down the left edge, in CSS pixels. */
 export const GUTTER_WIDTH = 56;
 
+/**
+ * Breathing room around a block, in CSS pixels.
+ *
+ * Taken off the bottom and the right only. A block's top and left edges have to
+ * keep meeting the hour rule and the day divider — that alignment is the whole
+ * reason a grid is readable at a glance — but the far edges are free to pull
+ * back, so five back-to-back meetings read as five blocks and not one long bar.
+ */
+export const BLOCK_GAP = 2;
+export const BLOCK_INSET = 2;
+export const BLOCK_TRAIL = 6;
+
+/** A floor for the painted height, so a one-minute sliver is still a rectangle. */
+export const BLOCK_MIN_HEIGHT = 10;
+
 export const HOURS: readonly number[] = Array.from({ length: 24 }, (_, i) => i);
 
 export function minutesToY(minutes: number): number {

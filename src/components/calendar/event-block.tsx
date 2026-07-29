@@ -2,7 +2,13 @@
 
 import { useEffect, useRef } from "react";
 
-import { minutesToY } from "@/lib/calendar/geometry";
+import {
+  BLOCK_GAP,
+  BLOCK_INSET,
+  BLOCK_MIN_HEIGHT,
+  BLOCK_TRAIL,
+  minutesToY,
+} from "@/lib/calendar/geometry";
 import { cn } from "@/lib/utils";
 
 /** Edge grab zone. Fingers need a bigger target than a cursor. */
@@ -74,7 +80,9 @@ export function EventBlock({
   };
   useEffect(() => cancelHold, []);
 
-  const height = minutesToY(endMinutes - startMinutes);
+  // The slot is what the time occupies; the block is drawn a little short of it
+  // so the next one down does not begin exactly where this one ends.
+  const height = Math.max(minutesToY(endMinutes - startMinutes) - BLOCK_GAP, BLOCK_MIN_HEIGHT);
   const grabZone = isCoarse ? TOUCH_HANDLE : HANDLE;
   const range = formatRange(startMinutes, endMinutes);
   /** Below two lines' worth of height the time has to share the title's row. */
@@ -105,8 +113,8 @@ export function EventBlock({
       style={{
         top: minutesToY(startMinutes),
         height,
-        left: `calc(${(column * 100) / columns}% + 2px)`,
-        width: `calc(${100 / columns}% - 4px)`,
+        left: `calc(${(column * 100) / columns}% + ${BLOCK_INSET}px)`,
+        width: `calc(${100 / columns}% - ${BLOCK_INSET + BLOCK_TRAIL}px)`,
         // On touch a block only claims the gesture once it is selected, so an
         // unselected block still lets the grid scroll under the finger. A
         // read-only block never claims it at all — there is nothing to drag.
