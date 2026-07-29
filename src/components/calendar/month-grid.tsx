@@ -1,0 +1,161 @@
+"use client";
+
+import { format, isSameDay, isSameMonth } from "date-fns";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+
+import { spanForDay } from "@/lib/calendar/geometry";
+import { calendarPath, MONTH_ROWS, weekdayInitials } from "@/lib/date";
+import { cn } from "@/lib/utils";
+import type { CalendarEvent } from "@/server/queries/events";
+import { updateEventTime, updateEventTitle } from "@/server/actions/events";
+import { EventDrawer } from "../editor/event-drawer";
+
+/**
+ * A month of whole days.
+ *
+ * Deliberately not a time grid: at 1/30th the width of a day column there is
+ * no honest way to draw an 09:00–09:15 block, so a month shows *what* is on a
+ * day and hands off to the day view for *when*. Chips are ordered by start
+ * time, which is the only part of the timing that survives at this scale.
+ */
+export function MonthGrid({
+  days,
+  events,
+  anchor,
+  openEventId,
+}: {
+  days: Date[];
+  events: CalendarEvent[];
+  anchor: Date;
+  openEventId: string | null;
+}) {
+  const router = useRouter();
+  const [, startSaving] = useTransition();
+  const [openId, setOpenId] = useState<string | null>(openEventId);
+
+  const weekdays = useMemo(() => weekdayInitials(), []);
+
+  // An event is on a day if it overlaps it at all, so a block running past
+  // midnight shows on both — the same rule the time grid draws by.
+  const byDay = useMemo(
+    () => days.map((day) => events.filter((e) => spanForDay(e.startsAt, e.endsAt, day) !== null)),
+    [days, events],
+  );
+
+  const openEvent = events.find((e) => e.id === openId) ?? null;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="grid shrink-0 grid-cols-7 border-b border-zinc-200 dark:border-zinc-800">
+        {weekdays.map((initial, i) => (
+          <div
+            key={i}
+            className="py-2 text-center text-[11px] font-medium tracking-wide text-zinc-400 uppercase"
+          >
+            {initial}
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="grid min-h-0 flex-1 grid-cols-7"
+        style={{ gridTemplateRows: `repeat(${MONTH_ROWS}, minmax(0, 1fr))` }}
+      >
+        {days.map((day, i) => (
+          <DayCell
+            key={day.toISOString()}
+            day={day}
+            events={byDay[i]}
+            // The grid spills into the neighbouring months; those days are real
+            // and clickable, just not what you came here to look at.
+            outside={!isSameMonth(day, anchor)}
+            onOpenEvent={setOpenId}
+          />
+        ))}
+      </div>
+
+      {openEvent ? (
+        <EventDrawer
+          key={openEvent.id}
+          eventId={openEvent.id}
+          title={openEvent.title}
+          startsAt={openEvent.startsAt}
+          endsAt={openEvent.endsAt}
+          readOnly={openEvent.origin === "google"}
+          onClose={() => setOpenId(null)}
+          onRename={(title) =>
+            startSaving(async () => {
+              await updateEventTitle({ id: openEvent.id, title });
+              router.refresh();
+            })
+          }
+          onReschedule={(startsAt, endsAt) =>
+            startSaving(async () => {
+              await updateEventTime({ id: openEvent.id, startsAt, endsAt });
+              router.refresh();
+            })
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Beyond this a cell would clip its chips silently, so the rest are counted. */
+const MAX_CHIPS = 3;
+
+function DayCell({
+  day,
+  events,
+  outside,
+  onOpenEvent,
+}: {
+  day: Date;
+  events: CalendarEvent[];
+  outside: boolean;
+  onOpenEvent: (id: string) => void;
+}) {
+  const today = isSameDay(day, new Date());
+  const shown = events.slice(0, MAX_CHIPS);
+  const hidden = events.length - shown.length;
+  const dayHref = calendarPath("day", day);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-b border-zinc-200 px-1 pt-1 pb-0.5 last:border-r-0 dark:border-zinc-800">
+      <a
+        href={dayHref}
+        className={cn(
+          "mx-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors",
+          today
+            ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+            : outside
+              ? "text-zinc-300 hover:bg-zinc-100 dark:text-zinc-600 dark:hover:bg-zinc-900"
+              : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
+        )}
+      >
+        {format(day, "d")}
+      </a>
+
+      {shown.map((event) => (
+        <button
+          key={event.id}
+          type="button"
+          onClick={() => onOpenEvent(event.id)}
+          className={cn(
+            "truncate rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 text-left text-[10px] leading-tight font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
+            outside && "opacity-60",
+          )}
+        >
+          {event.title || "Untitled"}
+        </button>
+      ))}
+
+      {hidden > 0 ? (
+        <a href={dayHref} className="px-1 text-[10px] text-zinc-400 hover:underline">
+          +{hidden} more
+        </a>
+      ) : null}
+    </div>
+  );
+}

@@ -4,8 +4,9 @@ import { notFound } from "next/navigation";
 
 import { CalendarToolbar } from "@/components/calendar/calendar-toolbar";
 import { GridSkeleton } from "@/components/calendar/grid-skeleton";
+import { MonthGrid } from "@/components/calendar/month-grid";
 import { TimeGrid } from "@/components/calendar/time-grid";
-import { fromDateParam, isCalendarView, visibleDays } from "@/lib/date";
+import { fromDateParam, isCalendarView, isTimeGridView, visibleDays } from "@/lib/date";
 import { getEventsInRange, type CalendarEvent } from "@/server/queries/events";
 import { requireUserId } from "@/server/auth";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,24 @@ export default async function CalendarPage({
     getEventsInRange(userId, rangeStart, rangeEnd),
   );
 
+  if (!isTimeGridView(view)) {
+    return (
+      <>
+        <CalendarToolbar view={view} anchor={anchor} />
+        {/* No skeleton: a month grid is mostly chrome, and its 42 cells draw
+            the same whether the events have landed or not. */}
+        <Suspense fallback={<div className="flex-1" />}>
+          <Month
+            days={days}
+            anchor={anchor}
+            eventsPromise={eventsPromise}
+            openEventId={open ?? null}
+          />
+        </Suspense>
+      </>
+    );
+  }
+
   return (
     <>
       <CalendarToolbar view={view} anchor={anchor} />
@@ -68,6 +87,28 @@ export default async function CalendarPage({
         <Grid days={days} eventsPromise={eventsPromise} openEventId={open ?? null} />
       </Suspense>
     </>
+  );
+}
+
+async function Month({
+  days,
+  anchor,
+  eventsPromise,
+  openEventId,
+}: {
+  days: Date[];
+  anchor: Date;
+  eventsPromise: Promise<CalendarEvent[]>;
+  openEventId: string | null;
+}) {
+  return (
+    <MonthGrid
+      key={openEventId ?? "month"}
+      days={days}
+      anchor={anchor}
+      events={await eventsPromise}
+      openEventId={openEventId}
+    />
   );
 }
 

@@ -5,23 +5,32 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { CommandPalette } from "@/components/search/command-palette";
-import {
-  CALENDAR_VIEWS,
-  calendarPath,
-  rangeLabel,
-  shiftAnchor,
-  type CalendarView,
-} from "@/lib/date";
+import { CALENDAR_VIEWS, calendarPath, shiftAnchor, type CalendarView } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { DateJump } from "./date-jump";
 
 const VIEW_LABELS: Record<CalendarView, string> = {
   day: "Day",
   "3day": "3 day",
   week: "Week",
+  month: "Month",
 };
 
-/** Number keys map to views the way the day-count reads: 1, 3, 7. */
-const VIEW_KEYS: Record<string, CalendarView> = { "1": "day", "3": "3day", "7": "week" };
+/** Four words do not fit a phone; their initials do, and stay recognisable. */
+const VIEW_INITIALS: Record<CalendarView, string> = {
+  day: "D",
+  "3day": "3",
+  week: "W",
+  month: "M",
+};
+
+/** Number keys map to views the way the day-count reads: 1, 3, 7 — then M. */
+const VIEW_KEYS: Record<string, CalendarView> = {
+  "1": "day",
+  "3": "3day",
+  "7": "week",
+  m: "month",
+};
 
 export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: Date }) {
   const router = useRouter();
@@ -53,15 +62,15 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
   }, [router, prev, next, today, anchor]);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-200 px-4 dark:border-zinc-800">
+    <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 px-2 sm:gap-3 sm:px-4 dark:border-zinc-800">
       <Link
         href={today}
-        className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+        className="shrink-0 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
       >
         Today
       </Link>
 
-      <div className="flex items-center">
+      <div className="flex shrink-0 items-center">
         <Link href={prev} aria-label="Previous" className={arrowClass}>
           ‹
         </Link>
@@ -70,9 +79,9 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
         </Link>
       </div>
 
-      <h1 className="truncate text-sm font-medium">{rangeLabel(anchor, view)}</h1>
+      <DateJump view={view} anchor={anchor} />
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
         <CommandPalette view={view} />
 
         {CALENDAR_VIEWS.map((v) => (
@@ -80,14 +89,16 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
             key={v}
             href={calendarPath(v, anchor)}
             aria-current={v === view ? "page" : undefined}
+            aria-label={VIEW_LABELS[v]}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              "rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors sm:px-2.5",
               v === view
                 ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
                 : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900",
             )}
           >
-            {VIEW_LABELS[v]}
+            <span className="hidden sm:inline">{VIEW_LABELS[v]}</span>
+            <span className="sm:hidden">{VIEW_INITIALS[v]}</span>
           </Link>
         ))}
       </div>
@@ -96,4 +107,4 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
 }
 
 const arrowClass =
-  "flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900";
+  "flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 sm:w-7 dark:hover:bg-zinc-900";

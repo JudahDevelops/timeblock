@@ -31,7 +31,8 @@ export function CommandPalette({ view }: { view: CalendarView }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-md border border-zinc-200 px-2.5 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+        aria-label="Search"
+        className="flex items-center gap-2 rounded-md border border-zinc-200 px-1.5 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-50 sm:px-2.5 dark:border-zinc-800 dark:hover:bg-zinc-900"
       >
         <svg
           viewBox="0 0 20 20"
@@ -44,7 +45,9 @@ export function CommandPalette({ view }: { view: CalendarView }) {
           <circle cx="9" cy="9" r="5.5" />
           <path d="M13 13l4 4" strokeLinecap="round" />
         </svg>
-        Search
+        {/* The magnifier alone is unambiguous, and the word is what pushes the
+            toolbar past a phone's width. */}
+        <span className="hidden sm:inline">Search</span>
       </button>
 
       {/* Unmounted while closed, so every open starts from a blank query and

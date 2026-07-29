@@ -810,7 +810,7 @@ const DayColumn = memo(function DayColumn({
       {/* Live preview while dragging out a brand-new block. */}
       {preview && !preview.id ? (
         <div
-          className="pointer-events-none absolute inset-x-1 rounded-md bg-zinc-900/80 dark:bg-zinc-100/80"
+          className="pointer-events-none absolute inset-x-1 rounded-md border border-zinc-200 bg-zinc-100/80 dark:border-zinc-800 dark:bg-zinc-900/80"
           style={{
             top: minutesToY(preview.startMinutes),
             height: minutesToY(preview.endMinutes - preview.startMinutes),

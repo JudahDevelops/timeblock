@@ -82,20 +82,16 @@ export function EventBlock({
   return (
     <div
       className={cn(
-        "absolute overflow-visible rounded-md px-2 py-1 shadow-sm transition-shadow select-none",
-        // Imported blocks recede behind the ones you planned yourself. The
-        // muted fill is the whole "you can't move this" affordance — a badge
-        // would not survive a 15-minute block.
-        readOnly
-          ? "border border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
-          : "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900",
+        "absolute overflow-visible rounded-md border px-2 py-1 shadow-sm transition-shadow select-none",
+        // One fill for every block, imported or planned. Origin is not worth a
+        // colour: what you actually need to see at a glance is the shape of the
+        // day, and two palettes fighting each other obscured it.
+        "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
         // The ring, not the background, marks selection — it stays legible at
         // 15-minute heights and reads the same under a finger as under a cursor.
         isSelected || isDraft
           ? "z-10 ring-2 ring-blue-500 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950"
-          : readOnly
-            ? ""
-            : "border border-white/20",
+          : "",
       )}
       style={{
         top: minutesToY(startMinutes),
