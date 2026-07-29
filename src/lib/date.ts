@@ -1,4 +1,4 @@
-import { addDays, format, parseISO, startOfWeek } from "date-fns";
+import { addDays, format, isSameMonth, isSameYear, parseISO, startOfWeek } from "date-fns";
 
 export const CALENDAR_VIEWS = ["day", "3day", "week"] as const;
 export type CalendarView = (typeof CALENDAR_VIEWS)[number];
@@ -32,4 +32,28 @@ export function fromDateParam(value: string): Date | null {
 export function visibleDays(anchor: Date, view: CalendarView): Date[] {
   const start = view === "week" ? startOfWeek(anchor, { weekStartsOn: 1 }) : anchor;
   return Array.from({ length: viewDayCount(view) }, (_, i) => addDays(start, i));
+}
+
+/** Pages the anchor forward or back by exactly one screenful. */
+export function shiftAnchor(anchor: Date, view: CalendarView, direction: 1 | -1): Date {
+  return addDays(anchor, viewDayCount(view) * direction);
+}
+
+/** Human label for the visible range, e.g. "29 Jul – 4 Aug 2026". */
+export function rangeLabel(anchor: Date, view: CalendarView): string {
+  const days = visibleDays(anchor, view);
+  const first = days[0];
+  const last = days[days.length - 1];
+
+  if (view === "day") return format(first, "EEEE d MMMM yyyy");
+
+  const sameMonth = isSameMonth(first, last);
+  const sameYear = isSameYear(first, last);
+
+  const left = format(first, sameMonth ? "d" : sameYear ? "d MMM" : "d MMM yyyy");
+  return `${left} – ${format(last, "d MMM yyyy")}`;
+}
+
+export function calendarPath(view: CalendarView, date: Date): string {
+  return `/calendar/${view}/${toDateParam(date)}`;
 }

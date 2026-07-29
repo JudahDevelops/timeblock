@@ -1,0 +1,32 @@
+import { redirect } from "next/navigation";
+
+import { Providers } from "@/app/providers";
+import { createClient } from "@/lib/supabase/server";
+import { UserMenu } from "@/components/shell/user-menu";
+
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Middleware already gates this, but a Server Component must not assume it —
+  // this is the boundary that actually guarantees `user` exists below.
+  if (!user) redirect("/login");
+
+  return (
+    <Providers>
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="hidden w-56 shrink-0 flex-col justify-between border-r border-zinc-200 p-4 md:flex dark:border-zinc-800">
+          <div>
+            <span className="text-sm font-semibold tracking-tight">Timeblock</span>
+            {/* Phase 1.1 fills this rail with the mini-month and search. */}
+          </div>
+          <UserMenu email={user.email ?? ""} />
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+      </div>
+    </Providers>
+  );
+}
