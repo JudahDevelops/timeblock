@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
 import { secretsMatch } from "@/lib/crypto";
 import { canWrite, exchangeCode, saveGrant } from "@/lib/google/auth";
+import { ensureChannel } from "@/lib/sync/channels";
 import { syncConnection } from "@/lib/sync/engine";
 import { requireUserId } from "@/server/auth";
 
@@ -90,6 +91,12 @@ export async function GET(request: Request) {
     console.error("First sync failed", cause);
     return back(request, { error: "sync_failed" });
   }
+
+  // Deliberately not guarded like the sync above. A channel is an optimisation
+  // over the five-minute poll, so failing the whole connect because Google
+  // would not accept a watch — which it never will from localhost — would be
+  // out of all proportion. `ensureChannel` reports rather than throws.
+  await ensureChannel(connectionId);
 
   return response;
 }

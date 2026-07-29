@@ -15,6 +15,13 @@
       "when": 1785326371936,
       "tag": "0001_robust_malice",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785331450757,
+      "tag": "0002_glossy_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }

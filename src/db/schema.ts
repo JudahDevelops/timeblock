@@ -211,7 +211,15 @@ export const syncJobs = pgTable(
     runAfter: timestamp("run_after", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sync_jobs_claim_idx").on(t.state, t.runAfter)],
+  (t) => [
+    index("sync_jobs_claim_idx").on(t.state, t.runAfter),
+    // A burst of webhook pings is one calendar changing, not twenty. Enforcing
+    // that in the index makes enqueueing a single `on conflict do nothing`
+    // insert, which a check-then-write could not do without racing itself.
+    uniqueIndex("sync_jobs_pending_idx")
+      .on(t.connectionId, t.kind)
+      .where(sql`state = 'pending'`),
+  ],
 );
 
 /** Audit trail for every last-write-wins resolution, so we can prove correctness. */

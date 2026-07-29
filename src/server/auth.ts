@@ -2,6 +2,8 @@ import "server-only";
 
 import { cache } from "react";
 
+import { secretsMatch } from "@/lib/crypto";
+import { serverEnv } from "@/env";
 import { createClient } from "@/lib/supabase/server";
 
 export type SessionUser = { id: string; email: string };
@@ -36,4 +38,16 @@ export const requireUser = cache(async (): Promise<SessionUser> => {
  */
 export async function requireUserId(): Promise<string> {
   return (await requireUser()).id;
+}
+
+/**
+ * Whether this request is Vercel Cron rather than a person.
+ *
+ * Cron carries a bearer token and no session, so the scheduled entrypoints
+ * cannot use `requireUser` and scope by connection row instead. Compared in
+ * constant time: this secret is the only thing guarding them.
+ */
+export function isCronRequest(request: Request): boolean {
+  const provided = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  return secretsMatch(provided, serverEnv.cronSecret);
 }

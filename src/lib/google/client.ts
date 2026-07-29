@@ -207,6 +207,49 @@ export async function deleteEvent(
   });
 }
 
+/** What Google hands back when a channel opens. `expiration` is epoch ms. */
+export type Channel = { id: string; resourceId: string; expiration?: string };
+
+/**
+ * Asks Google to notify `address` when this calendar changes.
+ *
+ * `token` is echoed back on every notification and is the *only* authentication
+ * a ping carries — the body is empty and nothing is signed. `id` is ours to
+ * choose and is how a ping is traced back to a connection.
+ */
+export async function watchEvents(
+  accessToken: string,
+  calendarId: string,
+  channel: { id: string; token: string; address: string; ttlSeconds: number },
+): Promise<Channel> {
+  return call(accessToken, `${eventsPath(calendarId)}/watch`, {
+    method: "POST",
+    body: {
+      id: channel.id,
+      type: "web_hook",
+      address: channel.address,
+      token: channel.token,
+      params: { ttl: String(channel.ttlSeconds) },
+    },
+  });
+}
+
+/**
+ * Closes a channel early.
+ *
+ * Both ids are required: Google keys a channel by the pair, and `resourceId` is
+ * only ever learned from the `watch` response, which is why it is stored.
+ */
+export async function stopChannel(
+  accessToken: string,
+  channel: { id: string; resourceId: string },
+): Promise<void> {
+  await call(accessToken, "/channels/stop", {
+    method: "POST",
+    body: { id: channel.id, resourceId: channel.resourceId },
+  });
+}
+
 async function toApiError(response: Response): Promise<GoogleApiError> {
   const body = await response.text();
   let reason = "";

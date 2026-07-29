@@ -148,12 +148,8 @@
           "name": "calendar_connections_google_account_id_google_accounts_id_fk",
           "tableFrom": "calendar_connections",
           "tableTo": "google_accounts",
-          "columnsFrom": [
-            "google_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["google_account_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -260,12 +256,8 @@
           "name": "event_links_local_event_id_events_id_fk",
           "tableFrom": "event_links",
           "tableTo": "events",
-          "columnsFrom": [
-            "local_event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["local_event_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -273,10 +265,7 @@
       "compositePrimaryKeys": {
         "event_links_gcal_calendar_id_gcal_event_id_pk": {
           "name": "event_links_gcal_calendar_id_gcal_event_id_pk",
-          "columns": [
-            "gcal_calendar_id",
-            "gcal_event_id"
-          ]
+          "columns": ["gcal_calendar_id", "gcal_event_id"]
         }
       },
       "uniqueConstraints": {},
@@ -559,9 +548,7 @@
         "google_accounts_google_sub_unique": {
           "name": "google_accounts_google_sub_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "google_sub"
-          ]
+          "columns": ["google_sub"]
         }
       },
       "policies": {},
@@ -645,12 +632,8 @@
           "name": "sync_conflicts_local_event_id_events_id_fk",
           "tableFrom": "sync_conflicts",
           "tableTo": "events",
-          "columnsFrom": [
-            "local_event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["local_event_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -754,12 +737,8 @@
           "name": "sync_jobs_connection_id_calendar_connections_id_fk",
           "tableFrom": "sync_jobs",
           "tableTo": "calendar_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["connection_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

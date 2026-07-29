@@ -3,12 +3,11 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
-import { secretsMatch } from "@/lib/crypto";
-import { serverEnv } from "@/env";
 import { GoogleRevokedError } from "@/lib/google/auth";
 import { syncConnection, type SyncOutcome } from "@/lib/sync/engine";
+import { runPendingJobs } from "@/lib/sync/jobs";
 import { pushPending, type PushResult } from "@/lib/sync/push";
-import { requireUserId } from "@/server/auth";
+import { isCronRequest, requireUserId } from "@/server/auth";
 
 export const runtime = "nodejs";
 
@@ -22,10 +21,13 @@ type RunResult = SyncOutcome & { pushed: Record<PushResult, number> };
  * connection row instead. Nearly every run is an empty incremental poll.
  */
 export async function GET(request: Request) {
-  const provided = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  if (!secretsMatch(provided, serverEnv.cronSecret)) {
+  if (!isCronRequest(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  // Anything a webhook queued but could not finish. Drained first so a ping
+  // that arrived seconds ago is not made to wait out this whole pass.
+  const drained = await runPendingJobs();
 
   const connections = await db
     .select({ id: calendarConnections.id, userId: calendarConnections.userId })
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ran: connections.length, results });
+  return NextResponse.json({ ran: connections.length, drained, results });
 }
 
 /**

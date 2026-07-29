@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
 import { calendarConnections, googleAccounts } from "@/db/schema";
+import { stopWatch } from "@/lib/sync/channels";
 import { requireUserId } from "@/server/auth";
 
 /**
@@ -26,6 +27,11 @@ export async function disconnectGoogle(connectionId: string) {
     .limit(1);
 
   if (!connection) throw new Error("Connection not found");
+
+  // Before the token that authorises it is destroyed. A channel left open
+  // would keep pinging for up to a week against a connection that no longer
+  // exists — harmless, since the webhook rejects it, but avoidable.
+  await stopWatch(connectionId);
 
   // The connection row cascades from the account, and the account is what
   // holds the refresh token — so this is the delete that actually revokes our

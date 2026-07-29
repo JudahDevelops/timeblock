@@ -70,6 +70,11 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
               ? ` · synced ${formatDistanceToNow(connection.lastSyncedAt, { addSuffix: true })}`
               : " · never synced"}
           </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {connection.live
+              ? "Live — Google pushes changes as they happen"
+              : "Checking for changes every 5 minutes"}
+          </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -96,6 +101,12 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
         <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           Google revoked this grant. Connect again to resume syncing — your existing blocks and
           their notes are untouched.
+        </p>
+      ) : null}
+
+      {connection.stale ? (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          No update from Google in a while. Nothing is lost — press Sync now to catch up.
         </p>
       ) : null}
 

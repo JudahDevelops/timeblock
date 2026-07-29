@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "sync_jobs_pending_idx" ON "sync_jobs" USING btree ("connection_id","kind") WHERE state = 'pending';
