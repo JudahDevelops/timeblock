@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 
 /**
- * Quick actions for a block, raised by a long press. A bottom sheet rather
- * than a floating popover: it needs no space calculation against the grid, and
- * the targets sit where a thumb already is.
+ * Quick actions for a block, raised by right-clicking it. A sheet rather than a
+ * floating popover: it needs no space calculation against the grid.
+ *
+ * Touch does not reach here. A held block is one being picked up and carried,
+ * and a tapped one opens its page — where rename and delete already live.
  */
 export function BlockActions({
   title,

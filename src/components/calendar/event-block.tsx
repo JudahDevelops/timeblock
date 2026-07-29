@@ -15,18 +15,18 @@ import { cn } from "@/lib/utils";
 const HANDLE = 8;
 const TOUCH_HANDLE = 22;
 
-/** Hold this long without moving to raise the quick actions sheet. */
+/** Hold this long without moving before the finger starts carrying the block. */
 const LONG_PRESS_MS = 450;
 /** Movement past this cancels the hold — it was a drag or a scroll. */
 const LONG_PRESS_SLOP_PX = 8;
 
-function formatRange(startMinutes: number, endMinutes: number): string {
-  const fmt = (m: number) =>
-    `${Math.floor(m / 60)
-      .toString()
-      .padStart(2, "0")}:${(m % 60).toString().padStart(2, "0")}`;
-  return `${fmt(startMinutes)} – ${fmt(endMinutes)}`;
-}
+/** Breathing room above and below the label, at full size. */
+const PAD = 4;
+/** One line of `text-xs`. Anything shorter has to eat into the label. */
+const LINE_HEIGHT = 16;
+
+/** Where a grab began. The hold fires long after its `PointerEvent` is gone. */
+export type GrabPoint = { clientX: number; clientY: number; touch: boolean };
 
 export function EventBlock({
   title,
@@ -41,10 +41,10 @@ export function EventBlock({
   readOnly = false,
   recurring = false,
   onSelect,
-  onStartEdit,
+  onOpen,
   onSaveTitle,
   onGrab,
-  onLongPress,
+  onMenu,
 }: {
   title: string;
   startMinutes: number;
@@ -60,13 +60,15 @@ export function EventBlock({
   /** One occurrence of a series, marked so it is not mistaken for a one-off. */
   recurring?: boolean;
   onSelect: () => void;
-  onStartEdit: () => void;
+  onOpen: () => void;
   onSaveTitle: (title: string) => void;
-  onGrab: (edge: "body" | "start" | "end", event: React.PointerEvent) => void;
-  onLongPress: () => void;
+  onGrab: (edge: "body" | "start" | "end", point: GrabPoint) => void;
+  onMenu: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const holdRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  /** `contextmenu` carries no pointer type, and a finger must not raise a menu. */
+  const fromTouchRef = useRef(false);
 
   useEffect(() => {
     if (isEditing) inputRef.current?.select();
@@ -84,20 +86,27 @@ export function EventBlock({
   // so the next one down does not begin exactly where this one ends.
   const height = Math.max(minutesToY(endMinutes - startMinutes) - BLOCK_GAP, BLOCK_MIN_HEIGHT);
   const grabZone = isCoarse ? TOUCH_HANDLE : HANDLE;
-  const range = formatRange(startMinutes, endMinutes);
-  /** Below two lines' worth of height the time has to share the title's row. */
-  const stacked = height > 34;
-  /** Handles are only worth showing once a block is the active target. */
-  const showHandles = !readOnly && isCoarse && (isSelected || isDraft) && height >= 32;
+  // The label sits centred and the padding is the first thing surrendered as
+  // the block shrinks: at a quarter of an hour there is barely a line's worth
+  // of room, and a name pushed out of its box is worse than one drawn tight
+  // against the border. Past that it clips rather than spilling over the
+  // neighbouring hour.
+  const padding = Math.max(0, Math.min(PAD, (height - LINE_HEIGHT) / 2));
+  // A finger only ever resizes the block it has just dropped, while the time is
+  // still being chosen. Afterwards the drawer owns it — handles at every size
+  // meant a block could not be picked up without one catching first.
+  const showHandles = !readOnly && isCoarse && isDraft && height >= 32;
+
+  const edgeAt = (event: React.PointerEvent) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetY = event.clientY - rect.top;
+    return offsetY <= grabZone ? "start" : offsetY >= rect.height - grabZone ? "end" : "body";
+  };
 
   return (
     <div
       className={cn(
-        // A container, so the text inside can answer to the width of *this
-        // block* rather than the viewport. A week column on a phone is ~50px,
-        // but the same block in day view is the full screen, and one media
-        // query cannot tell those apart.
-        "@container absolute overflow-visible rounded-md border px-2 py-1 transition-colors select-none",
+        "absolute flex flex-col overflow-visible rounded-md border px-2 transition-colors select-none",
         // One fill for every block, imported or planned. Origin is not worth a
         // colour: what you actually need to see at a glance is the shape of the
         // day, and two palettes fighting each other obscured it.
@@ -113,12 +122,14 @@ export function EventBlock({
       style={{
         top: minutesToY(startMinutes),
         height,
+        paddingBlock: padding,
         left: `calc(${(column * 100) / columns}% + ${BLOCK_INSET}px)`,
         width: `calc(${100 / columns}% - ${BLOCK_INSET + BLOCK_TRAIL}px)`,
-        // On touch a block only claims the gesture once it is selected, so an
-        // unselected block still lets the grid scroll under the finger. A
-        // read-only block never claims it at all — there is nothing to drag.
-        touchAction: readOnly || (isCoarse && !isSelected) ? "auto" : "none",
+        // A block only claims the gesture where it has one to claim. On touch
+        // that is a fresh draft and its handles; every other block lets the grid
+        // scroll and the pager turn beneath the finger, and takes the gesture
+        // back mid-hold instead (see the touch branch of the grid's drag loop).
+        touchAction: readOnly || (isCoarse && !isDraft) ? "auto" : "none",
       }}
       onMouseDown={(event) => {
         // A browser replays every touch as mouse events a few hundred
@@ -138,39 +149,43 @@ export function EventBlock({
         event.stopPropagation();
 
         const touch = event.pointerType === "touch";
+        fromTouchRef.current = touch;
 
-        if (touch && !isEditing) {
+        if (touch) {
+          if (isEditing) return;
+
+          // Handles are the one touch target that grabs on the way down — they
+          // are small, deliberate, and only exist while the block is a draft.
+          if (showHandles) {
+            const edge = edgeAt(event);
+            if (edge !== "body") {
+              onSelect();
+              onGrab(edge, { clientX: event.clientX, clientY: event.clientY, touch });
+              return;
+            }
+          }
+
+          // Otherwise the finger has committed to nothing yet: a hold picks the
+          // block up wherever it landed, a lift opens it, and travelling in
+          // between hands the gesture back to the grid.
           const { clientX: x, clientY: y } = event;
           holdRef.current = {
             x,
             y,
             timer: window.setTimeout(() => {
               holdRef.current = null;
-              onLongPress();
+              if (!readOnly) onGrab("body", { clientX: x, clientY: y, touch: true });
             }, LONG_PRESS_MS),
           };
+          return;
         }
 
-        // A finger landing on a block has not chosen it yet — it may be on its
-        // way across the grid to the next week. Touch selection waits for the
-        // lift, so brushing past a block no longer lights it up. A cursor has
-        // no such ambiguity: a press is a press.
-        if (touch) {
-          // First tap selects and nothing more; the second gesture moves it.
-          // Dragging straight away would fight the grid's scroll.
-          if (!isSelected) return;
-        } else {
-          onSelect();
-        }
+        // A cursor has no such ambiguity: a press is a press.
+        onSelect();
 
         // Nothing about a Google block is ours to move or resize.
         if (readOnly) return;
-
-        const rect = event.currentTarget.getBoundingClientRect();
-        const offsetY = event.clientY - rect.top;
-        const edge =
-          offsetY <= grabZone ? "start" : offsetY >= rect.height - grabZone ? "end" : "body";
-        onGrab(edge, event);
+        onGrab(edgeAt(event), { clientX: event.clientX, clientY: event.clientY, touch: false });
       }}
       onPointerMove={(event) => {
         const hold = holdRef.current;
@@ -181,19 +196,23 @@ export function EventBlock({
       }}
       onPointerUp={() => {
         // A hold still pending is a press that neither travelled past the slop
-        // nor lasted long enough to raise the sheet — which is exactly a tap.
+        // nor lasted long enough to pick the block up — which is exactly a tap,
+        // and a tap opens the page inside the block.
         const tapped = holdRef.current !== null;
         cancelHold();
-        if (tapped && !isSelected) onSelect();
+        if (tapped) onOpen();
       }}
       onPointerCancel={cancelHold}
       onDoubleClick={(event) => {
         event.stopPropagation();
-        onStartEdit();
+        onOpen();
       }}
       onContextMenu={(event) => {
         event.preventDefault();
-        onLongPress();
+        // A finger reaching here is Android's own long-press menu arriving on
+        // top of a block already being carried.
+        if (fromTouchRef.current) return;
+        onMenu();
       }}
       tabIndex={0}
       role="button"
@@ -217,17 +236,18 @@ export function EventBlock({
         </>
       ) : null}
 
-      {/* Clipped, while the block itself stays visible so the drag handles can
-          sit proud of its edges. Without this a label wider than a week column
-          on a phone paints straight across the neighbouring days. */}
-      <div className="flex min-w-0 items-baseline gap-1.5 overflow-hidden">
+      {/* Centred in whatever height is left, and clipped there. The block itself
+          stays `overflow-visible` so the handles can sit proud of its edges, so
+          without this a label taller or wider than its box paints across the
+          hour below and the neighbouring day. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center overflow-hidden">
         {isEditing ? (
           <input
             ref={inputRef}
             autoFocus
             defaultValue={title}
             placeholder="Name this block"
-            className="min-w-0 flex-1 bg-transparent text-xs font-medium outline-none placeholder:text-current/50"
+            className="min-w-0 bg-transparent text-xs font-medium outline-none placeholder:text-current/50"
             onPointerDown={(event) => event.stopPropagation()}
             onBlur={(event) => onSaveTitle(event.currentTarget.value)}
             onKeyDown={(event) => {
@@ -244,31 +264,14 @@ export function EventBlock({
             }}
           />
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             {recurring ? <RepeatIcon /> : null}
             <span className="min-w-0 flex-1 truncate text-xs leading-tight font-medium">
               {title || "Untitled"}
             </span>
           </div>
         )}
-
-        {/* Too short to stack the time under the title, so it rides alongside
-            it — but only where both still fit. Narrower than that the range was
-            winning the whole row and leaving the title nothing, which is the
-            wrong way round: a name you cannot read is a block you cannot find,
-            while the time is already legible from the hour rule beside it. */}
-        {stacked ? null : (
-          <span className="hidden shrink-0 text-[10px] tabular-nums opacity-70 @min-[9rem]:inline">
-            {range}
-          </span>
-        )}
       </div>
-
-      {stacked ? (
-        <div className="hidden truncate text-[10px] tabular-nums opacity-70 @min-[6rem]:block">
-          {range}
-        </div>
-      ) : null}
     </div>
   );
 }

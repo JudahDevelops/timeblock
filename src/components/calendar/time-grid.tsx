@@ -36,7 +36,7 @@ import { EventDrawer } from "../editor/event-drawer";
 import { useToast } from "../shell/toast";
 import { BlockActions } from "./block-actions";
 import { useEventOverlay } from "./use-event-overlay";
-import { EventBlock } from "./event-block";
+import { EventBlock, type GrabPoint } from "./event-block";
 import { NowIndicator } from "./now-indicator";
 
 /**
@@ -63,6 +63,8 @@ type DragBase = {
   originX: number;
   originY: number;
   moved: boolean;
+  /** Decides which family of events carries the gesture. See the drag effect. */
+  touch: boolean;
 };
 
 type Drag = DragBase &
@@ -355,10 +357,11 @@ export function TimeGrid({
   // mid-gesture. Listeners are rebound whenever `commit` changes identity —
   // harmless, since nothing here uses pointer capture.
   const isDragging = drag !== null;
+  const isTouchDrag = drag?.touch ?? false;
   useEffect(() => {
     if (!isDragging) return;
 
-    function apply(event: PointerEvent) {
+    function apply(clientX: number, clientY: number) {
       const current = dragRef.current;
       if (!current) return;
 
@@ -369,7 +372,7 @@ export function TimeGrid({
         const hit = columnsRef.current.findIndex((el) => {
           if (!el) return false;
           const rect = el.getBoundingClientRect();
-          return event.clientX >= rect.left && event.clientX < rect.right;
+          return clientX >= rect.left && clientX < rect.right;
         });
         if (hit !== -1) dayIndex = hit;
       }
@@ -377,27 +380,24 @@ export function TimeGrid({
       const el = columnsRef.current[dayIndex];
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const travelled = Math.hypot(
-        event.clientX - current.originX,
-        event.clientY - current.originY,
-      );
+      const travelled = Math.hypot(clientX - current.originX, clientY - current.originY);
       const next: Drag = {
         ...current,
         dayIndex,
         moved: current.moved || travelled >= DRAG_THRESHOLD_PX,
-        currentMinutes: clampToDay(yToMinutes(event.clientY - rect.top)),
+        currentMinutes: clampToDay(yToMinutes(clientY - rect.top)),
       };
       dragRef.current = next;
       setDrag(next);
     }
 
-    // Pointer events outpace the display; coalescing to one frame keeps the
-    // grid from re-rendering several times per painted frame.
-    function onMove(event: PointerEvent) {
+    // Input outpaces the display; coalescing to one frame keeps the grid from
+    // re-rendering several times per painted frame.
+    function schedule(clientX: number, clientY: number) {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
-        apply(event);
+        apply(clientX, clientY);
       });
     }
 
@@ -412,6 +412,33 @@ export function TimeGrid({
       if (current) commit(current);
     }
 
+    if (isTouchDrag) {
+      // A block picked up by a hold never had `touch-action: none` — it only
+      // became draggable half a second into a gesture the browser had already
+      // handed to the scroller. Cancelling `touchmove` is the only way to take
+      // it back, and doing that fires `pointercancel`, so the carry has to run
+      // on touch events rather than pointer ones. Capture, because stopping the
+      // event here is also what keeps the pager from turning the page while a
+      // block is being carried across days.
+      const onTouchMove = (event: TouchEvent) => {
+        const touch = event.touches[0];
+        if (!touch) return;
+        event.stopPropagation();
+        if (event.cancelable) event.preventDefault();
+        schedule(touch.clientX, touch.clientY);
+      };
+
+      window.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+      window.addEventListener("touchend", onUp);
+      window.addEventListener("touchcancel", onUp);
+      return () => {
+        window.removeEventListener("touchmove", onTouchMove, { capture: true });
+        window.removeEventListener("touchend", onUp);
+        window.removeEventListener("touchcancel", onUp);
+      };
+    }
+
+    const onMove = (event: PointerEvent) => schedule(event.clientX, event.clientY);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -420,7 +447,7 @@ export function TimeGrid({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [isDragging, commit]);
+  }, [isDragging, isTouchDrag, commit]);
 
   /**
    * Opens a block's document. A draft has no row to open yet, so it falls back
@@ -494,6 +521,7 @@ export function TimeGrid({
         originX: event.clientX,
         originY: event.clientY,
         moved: false,
+        touch: false,
       });
     },
     [beginDrag, minutesFromEvent],
@@ -547,16 +575,17 @@ export function TimeGrid({
       dayIndex: number,
       item: { id: string; startMinutes: number; endMinutes: number },
       edge: "body" | "start" | "end",
-      event: React.PointerEvent,
+      point: GrabPoint,
     ) => {
-      const minutes = minutesFromEvent(dayIndex, event.clientY);
+      const minutes = minutesFromEvent(dayIndex, point.clientY);
       changeSelection(item.id);
       const base = {
         dayIndex,
         currentMinutes: minutes,
-        originX: event.clientX,
-        originY: event.clientY,
+        originX: point.clientX,
+        originY: point.clientY,
         moved: false,
+        touch: point.touch,
       };
       if (edge === "body") {
         beginDrag({
@@ -587,16 +616,8 @@ export function TimeGrid({
     [changeSelection, draft, isReadOnly, removeEvent],
   );
 
-  const handleLongPress = useCallback(
+  const handleMenu = useCallback(
     (id: string) => {
-      // The press already began a drag; abandon it so the block does not follow
-      // the finger while the sheet is up.
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-      dragRef.current = null;
-      setDrag(null);
       changeSelection(id);
       setMenuFor(id);
     },
@@ -693,9 +714,9 @@ export function TimeGrid({
               onColumnPointerCancel={handleColumnPointerCancel}
               onGrab={handleGrab}
               onSelect={changeSelection}
-              onStartEdit={handleOpen}
+              onOpen={handleOpen}
               onSaveTitle={saveTitle}
-              onLongPress={handleLongPress}
+              onMenu={handleMenu}
             />
           ))}
         </div>
@@ -757,9 +778,9 @@ const DayColumn = memo(function DayColumn({
   onColumnPointerCancel,
   onGrab,
   onSelect,
-  onStartEdit,
+  onOpen,
   onSaveTitle,
-  onLongPress,
+  onMenu,
 }: {
   day: Date;
   dayIndex: number;
@@ -778,12 +799,12 @@ const DayColumn = memo(function DayColumn({
     dayIndex: number,
     item: { id: string; startMinutes: number; endMinutes: number },
     edge: "body" | "start" | "end",
-    event: React.PointerEvent,
+    point: GrabPoint,
   ) => void;
   onSelect: (id: string) => void;
-  onStartEdit: (id: string) => void;
+  onOpen: (id: string) => void;
   onSaveTitle: (id: string, title: string) => void;
-  onLongPress: (id: string) => void;
+  onMenu: (id: string) => void;
 }) {
   const spans = events
     .map((event) => {
@@ -831,10 +852,10 @@ const DayColumn = memo(function DayColumn({
           readOnly={item.event.origin === "google"}
           recurring={item.event.recurring}
           onSelect={() => onSelect(item.id)}
-          onStartEdit={() => onStartEdit(item.id)}
+          onOpen={() => onOpen(item.id)}
           onSaveTitle={(title) => onSaveTitle(item.id, title)}
-          onGrab={(edge, event) => onGrab(dayIndex, item, edge, event)}
-          onLongPress={() => onLongPress(item.id)}
+          onGrab={(edge, point) => onGrab(dayIndex, item, edge, point)}
+          onMenu={() => onMenu(item.id)}
         />
       ))}
 
