@@ -37,15 +37,16 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Must be getUser(), not getSession(): only getUser() revalidates the JWT
-  // against Supabase. getSession() trusts the cookie and can be spoofed.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims(), not getSession(): it verifies the JWT signature against the
+  // project's published keys, so a forged cookie is rejected. Unlike getUser()
+  // that check is local — auth-js caches the JWKS process-wide — which matters
+  // when the auth server is a continent away and this runs on every request.
+  const { data } = await supabase.auth.getClaims();
+  const signedIn = Boolean(data?.claims?.sub);
 
   const { pathname } = request.nextUrl;
 
-  if (!user && !isPublic(pathname)) {
+  if (!signedIn && !isPublic(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
@@ -54,7 +55,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname === "/login") {
+  if (signedIn && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.search = "";

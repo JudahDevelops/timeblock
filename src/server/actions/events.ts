@@ -42,7 +42,7 @@ export async function createEvent(input: {
     })
     .returning({ id: events.id });
 
-  revalidatePath("/calendar", "layout");
+  revalidatePath("/calendar", "page");
   return row;
 }
 
@@ -59,7 +59,7 @@ export async function updateEventTime(input: { id: string; startsAt: Date; endsA
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  revalidatePath("/calendar", "layout");
+  revalidatePath("/calendar", "page");
 }
 
 export async function updateEventTitle(input: { id: string; title: string }) {
@@ -73,7 +73,7 @@ export async function updateEventTitle(input: { id: string; title: string }) {
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  revalidatePath("/calendar", "layout");
+  revalidatePath("/calendar", "page");
 }
 
 /**
@@ -88,5 +88,5 @@ export async function deleteEvent(id: string) {
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(events.id, id), eq(events.userId, userId)));
 
-  revalidatePath("/calendar", "layout");
+  revalidatePath("/calendar", "page");
 }

@@ -1,18 +1,18 @@
 import { redirect } from "next/navigation";
 
 import { Providers } from "@/app/providers";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser, type SessionUser } from "@/server/auth";
 import { UserMenu } from "@/components/shell/user-menu";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Middleware already gates this, but a Server Component must not assume it —
-  // this is the boundary that actually guarantees `user` exists below.
-  if (!user) redirect("/login");
+  // The proxy already gates this, but a Server Component must not assume it —
+  // this is the boundary that actually guarantees a user below.
+  let user: SessionUser;
+  try {
+    user = await requireUser();
+  } catch {
+    redirect("/login");
+  }
 
   return (
     <Providers>
@@ -22,10 +22,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="text-sm font-semibold tracking-tight">Timeblock</span>
             {/* Phase 1.1 fills this rail with the mini-month and search. */}
           </div>
-          <UserMenu email={user.email ?? ""} />
+          <UserMenu email={user.email} />
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        {/* `min-h-0` is load-bearing: without it a flex child refuses to shrink
+            below its content height, so the grid's inner scroll never engages. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
       </div>
     </Providers>
   );

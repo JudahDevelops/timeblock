@@ -1,10 +1,12 @@
+import { Suspense } from "react";
 import { format, isToday } from "date-fns";
 import { notFound } from "next/navigation";
 
 import { CalendarToolbar } from "@/components/calendar/calendar-toolbar";
+import { GridSkeleton } from "@/components/calendar/grid-skeleton";
 import { TimeGrid } from "@/components/calendar/time-grid";
 import { fromDateParam, isCalendarView, visibleDays } from "@/lib/date";
-import { getEventsInRange } from "@/server/queries/events";
+import { getEventsInRange, type CalendarEvent } from "@/server/queries/events";
 import { requireUserId } from "@/server/auth";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +28,11 @@ export default async function CalendarPage({
   const rangeEnd = new Date(days[days.length - 1]);
   rangeEnd.setHours(24, 0, 0, 0);
 
-  const userId = await requireUserId();
-  const events = await getEventsInRange(userId, rangeStart, rangeEnd);
+  // Deliberately not awaited: the toolbar and day headers below render while
+  // the query is still in flight, so changing week paints immediately.
+  const eventsPromise = requireUserId().then((userId) =>
+    getEventsInRange(userId, rangeStart, rangeEnd),
+  );
 
   return (
     <>
@@ -55,7 +60,19 @@ export default async function CalendarPage({
         </div>
       </div>
 
-      <TimeGrid days={days} events={events} />
+      <Suspense fallback={<GridSkeleton columns={days.length} />}>
+        <Grid days={days} eventsPromise={eventsPromise} />
+      </Suspense>
     </>
   );
+}
+
+async function Grid({
+  days,
+  eventsPromise,
+}: {
+  days: Date[];
+  eventsPromise: Promise<CalendarEvent[]>;
+}) {
+  return <TimeGrid days={days} events={await eventsPromise} />;
 }

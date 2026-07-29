@@ -18,6 +18,11 @@ export const MIN_EVENT_MINUTES = 15;
 
 export const DAY_HEIGHT = (MINUTES_PER_DAY / 60) * HOUR_HEIGHT;
 
+/** Width of the hour-label rail down the left edge, in CSS pixels. */
+export const GUTTER_WIDTH = 56;
+
+export const HOURS: readonly number[] = Array.from({ length: 24 }, (_, i) => i);
+
 export function minutesToY(minutes: number): number {
   return (minutes / 60) * HOUR_HEIGHT;
 }
