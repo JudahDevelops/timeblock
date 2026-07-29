@@ -12,6 +12,7 @@ import {
   HOURS,
   MIN_EVENT_MINUTES,
   MINUTES_PER_DAY,
+  minutesSinceMidnight,
   minutesToY,
   snapToStep,
   spanForDay,
@@ -38,6 +39,9 @@ import { NowIndicator } from "./now-indicator";
  * Without it, every stray tap created an event.
  */
 const DRAG_THRESHOLD_PX = 4;
+
+/** Where the grid opens: the start of a working day, not midnight. */
+const DEFAULT_SCROLL_MINUTES = 7 * 60;
 
 /**
  * Touch has no drag-to-create: that gesture is indistinguishable from a scroll.
@@ -94,7 +98,16 @@ function dragRange(drag: Drag): { startMinutes: number; endMinutes: number } {
 /** What a single column should draw on top of its stored events. */
 type Preview = { id: string | null; startMinutes: number; endMinutes: number };
 
-export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent[] }) {
+export function TimeGrid({
+  days,
+  events,
+  openEventId = null,
+}: {
+  days: Date[];
+  events: CalendarEvent[];
+  /** A block to open immediately, set by the search palette. */
+  openEventId?: string | null;
+}) {
   const router = useRouter();
   const isCoarse = useCoarsePointer();
 
@@ -117,14 +130,23 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
   /** Id of the block whose quick-actions sheet is open, if any. */
   const [menuFor, setMenuFor] = useState<string | null>(null);
   /** Id of the block whose document is open in the drawer, if any. */
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(openEventId);
   /** Events awaiting a server round-trip, so the grid never appears to lag. */
   const [optimistic, setOptimistic] = useState<Record<string, CalendarEvent>>({});
 
-  // Open on the working day rather than midnight.
+  // Open on the working day rather than midnight — or, arriving from search, on
+  // the block itself, so the grid behind the drawer shows where you landed.
+  const scrolledRef = useRef(false);
   useLayoutEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = minutesToY(7 * 60);
-  }, []);
+    if (scrolledRef.current || !scrollRef.current) return;
+    scrolledRef.current = true;
+
+    const target = openEventId ? events.find((e) => e.id === openEventId) : null;
+    const minutes = target
+      ? Math.max(minutesSinceMidnight(target.startsAt) - 60, 0)
+      : DEFAULT_SCROLL_MINUTES;
+    scrollRef.current.scrollTop = minutesToY(minutes);
+  }, [openEventId, events]);
 
   const merged = useMemo(() => {
     const rows = events

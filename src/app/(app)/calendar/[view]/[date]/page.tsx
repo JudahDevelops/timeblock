@@ -12,10 +12,14 @@ import { cn } from "@/lib/utils";
 
 export default async function CalendarPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ view: string; date: string }>;
+  searchParams: Promise<{ open?: string }>;
 }) {
   const { view, date } = await params;
+  // Set by the search palette: which block to land inside on arrival.
+  const { open } = await searchParams;
 
   if (!isCalendarView(view)) notFound();
   const anchor = fromDateParam(date);
@@ -61,7 +65,7 @@ export default async function CalendarPage({
       </div>
 
       <Suspense fallback={<GridSkeleton columns={days.length} />}>
-        <Grid days={days} eventsPromise={eventsPromise} />
+        <Grid days={days} eventsPromise={eventsPromise} openEventId={open ?? null} />
       </Suspense>
     </>
   );
@@ -70,9 +74,21 @@ export default async function CalendarPage({
 async function Grid({
   days,
   eventsPromise,
+  openEventId,
 }: {
   days: Date[];
   eventsPromise: Promise<CalendarEvent[]>;
+  openEventId: string | null;
 }) {
-  return <TimeGrid days={days} events={await eventsPromise} />;
+  return (
+    // Keyed on the target so arriving from search rebuilds the grid: the drawer
+    // is grid state, and a second search would otherwise land on a component
+    // that has already consumed its initial value.
+    <TimeGrid
+      key={openEventId ?? "grid"}
+      days={days}
+      events={await eventsPromise}
+      openEventId={openEventId}
+    />
+  );
 }

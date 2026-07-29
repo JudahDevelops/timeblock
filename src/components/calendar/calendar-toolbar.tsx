@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { CommandPalette } from "@/components/search/command-palette";
 import {
   CALENDAR_VIEWS,
   calendarPath,
@@ -72,6 +73,8 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
       <h1 className="truncate text-sm font-medium">{rangeLabel(anchor, view)}</h1>
 
       <div className="ml-auto flex items-center gap-1">
+        <CommandPalette view={view} />
+
         {CALENDAR_VIEWS.map((v) => (
           <Link
             key={v}
