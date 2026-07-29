@@ -1,6 +1,7 @@
 "use client";
 
 import { format, isSameDay, isSameMonth } from "date-fns";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
@@ -146,7 +147,10 @@ function DayCell({
 
   return (
     <div className="border-line flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-b px-1 pt-1 pb-0.5 last:border-r-0">
-      <a
+      {/* `Link`, not a bare anchor. A full-page navigation inside an iOS
+          home-screen app is handed back to Safari, chrome and all — the day
+          view would open in a browser and never find its way home. */}
+      <Link
         href={dayHref}
         className={cn(
           "mx-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors",
@@ -158,7 +162,7 @@ function DayCell({
         )}
       >
         {format(day, "d")}
-      </a>
+      </Link>
 
       {shown.map((event) => (
         <button
@@ -175,9 +179,9 @@ function DayCell({
       ))}
 
       {hidden > 0 ? (
-        <a href={dayHref} className="text-ink-faint px-1 text-[10px] hover:underline">
+        <Link href={dayHref} className="text-ink-faint px-1 text-[10px] hover:underline">
           +{hidden} more
-        </a>
+        </Link>
       ) : null}
     </div>
   );

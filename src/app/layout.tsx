@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { THEME_SCRIPT } from "@/lib/theme";
@@ -17,6 +17,25 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Timeblock",
   description: "A calendar where every block of time is a page you work inside.",
+  // iOS reads these rather than the manifest's `display`, and without them a
+  // home-screen launch is a Safari tab wearing an icon.
+  appleWebApp: {
+    capable: true,
+    title: "Timeblock",
+    // Not `black-translucent`, which pulls the page up under the clock. The
+    // toolbar has no safe-area padding to give it, so the status bar keeps its
+    // own strip and takes its colour from `themeColor` below.
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  // Matched to `--surface`. On a phone this is the strip behind the status bar,
+  // and left unset it renders white above a dark calendar.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+  ],
 };
 
 export default function RootLayout({
