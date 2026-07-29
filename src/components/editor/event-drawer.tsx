@@ -43,6 +43,7 @@ export function EventDrawer({
   onClose,
   onRename,
   onReschedule,
+  onDelete,
 }: {
   eventId: string;
   title: string;
@@ -61,6 +62,7 @@ export function EventDrawer({
   onClose: () => void;
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
+  onDelete?: () => void;
 }) {
   const keyboardInset = useKeyboardInset();
 
@@ -118,7 +120,7 @@ export function EventDrawer({
         ) : isPending ? (
           <p className="text-ink-faint px-6 py-8 text-sm">Loading…</p>
         ) : (
-          <Body doc={data} onClose={onClose} />
+          <Body doc={data} onClose={onClose} onDelete={onDelete} />
         )}
       </aside>
     </>
@@ -250,7 +252,15 @@ function TimeInput({
   );
 }
 
-function Body({ doc, onClose }: { doc: EventDocument; onClose: () => void }) {
+function Body({
+  doc,
+  onClose,
+  onDelete,
+}: {
+  doc: EventDocument;
+  onClose: () => void;
+  onDelete?: () => void;
+}) {
   const [conflict, setConflict] = useState(false);
 
   const handleConflict = useCallback(() => setConflict(true), []);
@@ -285,10 +295,19 @@ function Body({ doc, onClose }: { doc: EventDocument; onClose: () => void }) {
         <BlockEditor initialContent={doc.body} onChange={scheduleSave} />
       </div>
 
-      <footer className="border-line flex shrink-0 items-center justify-end border-t px-6 py-2">
+      <footer className="border-line flex shrink-0 items-center border-t px-6 py-2">
+        {onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="text-danger hover:text-danger/80 text-xs"
+          >
+            Delete
+          </button>
+        ) : null}
         <span
           className={cn(
-            "text-xs",
+            "ml-auto text-xs",
             state === "error" || state === "conflict" ? "text-danger" : "text-ink-faint",
           )}
         >

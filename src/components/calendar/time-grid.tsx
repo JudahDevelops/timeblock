@@ -756,6 +756,14 @@ export function TimeGrid({
           onClose={() => setOpenId(null)}
           onRename={(title) => void saveTitle(openEvent.id, title)}
           onReschedule={(startsAt, endsAt) => applyTime(openEvent.id, startsAt, endsAt)}
+          onDelete={
+            openEvent.origin === "google"
+              ? undefined
+              : () => {
+                  setOpenId(null);
+                  removeEvent(openEvent.id);
+                }
+          }
         />
       ) : null}
     </div>

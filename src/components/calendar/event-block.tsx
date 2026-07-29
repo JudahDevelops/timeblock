@@ -152,10 +152,11 @@ export function EventBlock({
         fromTouchRef.current = touch;
 
         if (touch) {
-          if (isEditing) return;
-
           // Handles are the one touch target that grabs on the way down — they
           // are small, deliberate, and only exist while the block is a draft.
+          // Checked before the editing guard: a finger on a handle while the
+          // title input is open is adjusting the time, not dismissing the name.
+          // The blur the grab causes commits the title through `onSaveTitle`.
           if (showHandles) {
             const edge = edgeAt(event);
             if (edge !== "body") {
@@ -164,6 +165,8 @@ export function EventBlock({
               return;
             }
           }
+
+          if (isEditing) return;
 
           // Otherwise the finger has committed to nothing yet: a hold picks the
           // block up wherever it landed, a lift opens it, and travelling in
