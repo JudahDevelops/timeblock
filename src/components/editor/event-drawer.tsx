@@ -39,6 +39,7 @@ export function EventDrawer({
   startsAt,
   endsAt,
   readOnly = false,
+  recurring = false,
   onClose,
   onRename,
   onReschedule,
@@ -52,6 +53,11 @@ export function EventDrawer({
    * below is still ours, which is the entire point of the product.
    */
   readOnly?: boolean;
+  /**
+   * One occurrence of a series. Worth surfacing because the body is keyed to
+   * this instance alone — notes written here do not appear on next week's.
+   */
+  recurring?: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
@@ -99,6 +105,7 @@ export function EventDrawer({
           startsAt={startsAt}
           endsAt={endsAt}
           readOnly={readOnly}
+          recurring={recurring}
           onClose={onClose}
           onRename={onRename}
           onReschedule={onReschedule}
@@ -123,6 +130,7 @@ function Header({
   startsAt,
   endsAt,
   readOnly,
+  recurring,
   onClose,
   onRename,
   onReschedule,
@@ -131,6 +139,7 @@ function Header({
   startsAt: Date;
   endsAt: Date;
   readOnly: boolean;
+  recurring: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
@@ -207,11 +216,18 @@ function Header({
             <TimeInput value={endsAt} onChange={(v) => changeTime("end", v)} label="End time" />
           </>
         )}
-        {readOnly ? (
-          <span className="ml-auto rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
-            Google
-          </span>
-        ) : null}
+        <span className="ml-auto flex items-center gap-1.5">
+          {recurring ? (
+            <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
+              Repeats
+            </span>
+          ) : null}
+          {readOnly ? (
+            <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
+              Google
+            </span>
+          ) : null}
+        </span>
       </div>
     </header>
   );

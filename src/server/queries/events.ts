@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, gt, isNull, lt, eq } from "drizzle-orm";
+import { and, asc, gt, isNotNull, isNull, lt, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { events } from "@/db/schema";
@@ -12,6 +12,15 @@ export type CalendarEvent = {
   endsAt: Date;
   allDay: boolean;
   origin: "local" | "google";
+  /**
+   * One occurrence of a repeating series.
+   *
+   * Google expands recurrence for us — `singleEvents: true` means every instance
+   * arrives as its own event, so this is a display hint and nothing more. The
+   * series id itself is deliberately not exposed: no view needs it yet, and the
+   * boolean is what the grid actually draws.
+   */
+  recurring: boolean;
 };
 
 /**
@@ -34,6 +43,7 @@ export async function getEventsInRange(
       endsAt: events.endsAt,
       allDay: events.allDay,
       origin: events.origin,
+      recurring: sql<boolean>`${isNotNull(events.recurringEventId)}`,
     })
     .from(events)
     .where(

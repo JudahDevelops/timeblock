@@ -160,6 +160,7 @@ export function TimeGrid({
         endsAt: draft.endsAt,
         allDay: false,
         origin: "local",
+        recurring: false,
       });
     }
     return rows;
@@ -251,7 +252,15 @@ export function TimeGrid({
           if (row) {
             setOptimistic((o) => ({
               ...o,
-              [row.id]: { id: row.id, title, startsAt, endsAt, allDay: false, origin: "local" },
+              [row.id]: {
+                id: row.id,
+                title,
+                startsAt,
+                endsAt,
+                allDay: false,
+                origin: "local",
+                recurring: false,
+              },
             }));
             changeSelection(row.id);
           }
@@ -702,6 +711,7 @@ export function TimeGrid({
           startsAt={openEvent.startsAt}
           endsAt={openEvent.endsAt}
           readOnly={openEvent.origin === "google"}
+          recurring={openEvent.recurring}
           onClose={() => setOpenId(null)}
           onRename={(title) => void saveTitle(openEvent.id, title)}
           onReschedule={(startsAt, endsAt) => applyTime(openEvent.id, startsAt, endsAt)}
@@ -799,6 +809,7 @@ const DayColumn = memo(function DayColumn({
           isDraft={item.id === draftId}
           isCoarse={isCoarse}
           readOnly={item.event.origin === "google"}
+          recurring={item.event.recurring}
           onSelect={() => onSelect(item.id)}
           onStartEdit={() => onStartEdit(item.id)}
           onSaveTitle={(title) => onSaveTitle(item.id, title)}

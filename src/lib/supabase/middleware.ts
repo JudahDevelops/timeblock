@@ -9,7 +9,7 @@ const PUBLIC_PREFIXES = ["/login", "/auth"];
 /**
  * Routes that authenticate themselves, so the gate below must let them past.
  *
- * `/api/sync` is a Vercel Cron target: it arrives with a bearer token and no
+ * `/api/sync` is a scheduler target: it arrives with a bearer token and no
  * session at all, so gating it would 401 every scheduled run. Its GET checks
  * the cron secret; its POST still calls `requireUserId()`.
  */

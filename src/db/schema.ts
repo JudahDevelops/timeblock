@@ -52,9 +52,13 @@ export const events = pgTable(
       .notNull()
       .default("local"),
 
-    /** RRULE strings, stored verbatim as Google returns them. */
-    recurrence: text("recurrence").array(),
-    /** Set on instances of a recurring series. */
+    /**
+     * Set on instances of a recurring series.
+     *
+     * There is no RRULE column to go with it: `singleEvents: true` means Google
+     * expands recurrence for us and never sends the series master, so an
+     * instance is the only form a repeating event takes here.
+     */
     recurringEventId: text("recurring_event_id"),
     originalStartTime: timestamp("original_start_time", { withTimezone: true }),
 

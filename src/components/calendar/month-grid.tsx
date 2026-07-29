@@ -83,6 +83,7 @@ export function MonthGrid({
           startsAt={openEvent.startsAt}
           endsAt={openEvent.endsAt}
           readOnly={openEvent.origin === "google"}
+          recurring={openEvent.recurring}
           onClose={() => setOpenId(null)}
           onRename={(title) =>
             startSaving(async () => {

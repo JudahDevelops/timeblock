@@ -12,7 +12,6 @@ function event(overrides: Partial<Event> = {}): Event {
     endsAt: new Date("2026-08-05T11:00:00.000Z"),
     allDay: false,
     tz: "Africa/Lagos",
-    recurrence: null,
     recurringEventId: null,
     originalStartTime: null,
     origin: "local",
@@ -35,8 +34,11 @@ describe("isPushable", () => {
     expect(isPushable(event({ origin: "google" }))).toBe(false);
   });
 
-  it("holds back recurring events, whose writes are deferred", () => {
-    expect(isPushable(event({ recurrence: ["RRULE:FREQ=WEEKLY"] }))).toBe(false);
+  it("holds back an instance of a series, whose writes are deferred", () => {
+    expect(isPushable(event({ recurringEventId: "series" }))).toBe(false);
+    // Even one we created ourselves: the guard is about what the write would do
+    // to Google's series, not about who owns the row.
+    expect(isPushable(event({ origin: "local", recurringEventId: "series" }))).toBe(false);
   });
 });
 

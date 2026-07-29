@@ -16,6 +16,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:rls": "tsx scripts/apply-sql.ts drizzle/rls.sql",
+    "db:cron": "tsx scripts/schedule-sync.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -35,7 +36,6 @@
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "rrule": "^2.8.1",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "zustand": "^5.0.14"

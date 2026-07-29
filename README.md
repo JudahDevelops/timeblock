@@ -51,6 +51,30 @@ push reads it as drift and offers to disable row-level security and drop every p
    verification is required before push notifications will work.
 3. **Secrets** — `openssl rand -base64 32` for `TOKEN_ENCRYPTION_KEY`,
    `openssl rand -hex 32` for `CRON_SECRET`.
+4. **Schedules** — after the first deploy, point `NEXT_PUBLIC_APP_URL` at the real
+   domain and run `npm run db:cron`. See below.
+
+### Scheduling
+
+The two scheduled entrypoints are driven by **pg_cron inside Supabase**, not by the
+host's cron. Vercel's Hobby plan allows one run per day and fires it anywhere inside
+the chosen hour, which is fatal rather than merely slow: watch channels are renewed
+when they come within 24h of expiry, so a daily job that drifts by an hour steps over
+the window and lets a channel die silently.
+
+```bash
+npm run db:cron   # installs pg_cron + pg_net and (re)schedules both jobs
+```
+
+| Job                        | Schedule      | Target                     |
+| -------------------------- | ------------- | -------------------------- |
+| `timeblock-sync`           | `*/5 * * * *` | `/api/sync/run`            |
+| `timeblock-renew-channels` | `0 * * * *`   | `/api/sync/renew-channels` |
+
+Each fires `net.http_get` with `Authorization: Bearer $CRON_SECRET`. The script is
+idempotent — re-run it after rotating the secret or changing the domain. It refuses
+to run against localhost. Responses land in `net._http_response` for six hours,
+which is where to look when a run seems to have gone missing.
 
 ## Scripts
 
@@ -62,6 +86,7 @@ push reads it as drift and offers to disable row-level security and drop every p
 | `npm run test`                    | Vitest                                   |
 | `npm run db:generate`             | Emit a migration from `src/db/schema.ts` |
 | `npm run db:rls`                  | Apply `drizzle/rls.sql`                  |
+| `npm run db:cron`                 | Schedule the sync jobs via pg_cron       |
 | `npm run db:studio`               | Drizzle Studio                           |
 
 ## Architecture notes
@@ -74,14 +99,18 @@ push reads it as drift and offers to disable row-level security and drop every p
   `provider_refresh_token` only once at sign-in and never persists it.
 - **A 410 from Google does not mean wipe local rows.** Full resync reconciles
   through `event_links`, so block bodies survive.
-- **Watch channels expire (~7 days).** Renewed hourly by cron; read the
+- **Watch channels expire (~7 days).** Renewed hourly by pg_cron; read the
   expiration Google returns rather than hardcoding it.
+- **Recurrence is Google's job.** `singleEvents: true` means every occurrence
+  arrives as its own event carrying a `recurringEventId`; the series master is
+  never sent, so there is no RRULE to expand and no column to store one in.
+  Instances render with a repeat glyph and are held back from outbound writes.
 
 ## Status
 
-Phases 0–8 complete: the grid (day/3-day/week/month), the block editor with autosave,
-full-text search, Google read and incremental sync, outbound writes, and push
-notifications. Next is conflict resolution.
+All ten phases complete: the grid (day/3-day/week/month), the block editor with
+autosave, full-text search, Google read and incremental sync, outbound writes, push
+notifications, conflict resolution, and recurring-instance display.
 
 Push notifications only work on a deployed HTTPS domain verified in Search Console —
 locally, every connection falls back to the five-minute poll.

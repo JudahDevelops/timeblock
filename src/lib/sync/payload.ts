@@ -32,11 +32,15 @@ export const TB_EVENT_ID = "tb_event_id";
 const STUB_CHARS = 500;
 
 /** Events we own and may write. Google's own imports are never pushed back. */
-export function isPushable(event: Pick<Event, "origin" | "recurrence">): boolean {
-  // Recurring writes are deferred: a botched override creates duplicate ghost
-  // instances that are miserable to clean up, and nothing here creates a series
-  // yet anyway.
-  return event.origin === "local" && !event.recurrence?.length;
+export function isPushable(event: Pick<Event, "origin" | "recurringEventId">): boolean {
+  // Recurring writes are deferred: patching a single expanded instance creates
+  // an override, and a botched one leaves duplicate ghosts that are miserable
+  // to clean up.
+  //
+  // Guarded on `recurringEventId` rather than on an RRULE, because `singleEvents`
+  // means Google never sends us the series master — an instance is the only
+  // form a repeating event takes here, and it is the only one we can get wrong.
+  return event.origin === "local" && event.recurringEventId === null;
 }
 
 export function permalink(eventId: string): string {

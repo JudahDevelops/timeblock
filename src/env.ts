@@ -29,7 +29,7 @@ export const serverEnv = {
   get tokenEncryptionKey() {
     return required("TOKEN_ENCRYPTION_KEY");
   },
-  /** Shared secret guarding the Vercel Cron entrypoints. */
+  /** Shared secret guarding the scheduled entrypoints. */
   get cronSecret() {
     return required("CRON_SECRET");
   },

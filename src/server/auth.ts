@@ -41,7 +41,7 @@ export async function requireUserId(): Promise<string> {
 }
 
 /**
- * Whether this request is Vercel Cron rather than a person.
+ * Whether this request is the scheduler rather than a person.
  *
  * Cron carries a bearer token and no session, so the scheduled entrypoints
  * cannot use `requireUser` and scope by connection row instead. Compared in

@@ -33,6 +33,7 @@ export function EventBlock({
   isDraft,
   isCoarse,
   readOnly = false,
+  recurring = false,
   onSelect,
   onStartEdit,
   onSaveTitle,
@@ -50,6 +51,8 @@ export function EventBlock({
   isCoarse: boolean;
   /** Owned by Google: opens like any block, but its time and title are theirs. */
   readOnly?: boolean;
+  /** One occurrence of a series, marked so it is not mistaken for a one-off. */
+  recurring?: boolean;
   onSelect: () => void;
   onStartEdit: () => void;
   onSaveTitle: (title: string) => void;
@@ -212,8 +215,11 @@ export function EventBlock({
             }}
           />
         ) : (
-          <div className="min-w-0 flex-1 truncate text-xs leading-tight font-medium">
-            {title || "Untitled"}
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {recurring ? <RepeatIcon /> : null}
+            <span className="min-w-0 flex-1 truncate text-xs leading-tight font-medium">
+              {title || "Untitled"}
+            </span>
           </div>
         )}
 
@@ -226,6 +232,34 @@ export function EventBlock({
 
       {stacked ? <div className="text-[10px] tabular-nums opacity-70">{range}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Marks one occurrence of a series.
+ *
+ * Carries the label rather than a tooltip: the glyph is 10px and shares a row
+ * with a truncating title, so a screen reader is the only thing that reliably
+ * gets to read it.
+ */
+function RepeatIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-2.5 shrink-0 opacity-60"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label="Repeats"
+    >
+      <path d="M17 2l4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 014-4h14" />
+      <path d="M7 22l-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 01-4 4H3" />
+    </svg>
   );
 }
 

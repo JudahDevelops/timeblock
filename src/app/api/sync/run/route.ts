@@ -10,14 +10,21 @@ import { pushPending, type PushResult } from "@/lib/sync/push";
 import { isCronRequest, requireUserId } from "@/server/auth";
 
 export const runtime = "nodejs";
+/**
+ * A full resync walks every page Google will give us at ~270ms per database
+ * round trip, which comfortably outruns the default ceiling. 60s is the most
+ * the Hobby plan allows, and being cut off mid-page is the one failure that
+ * leaves a sync token half-advanced.
+ */
+export const maxDuration = 60;
 
 type RunResult = SyncOutcome & { pushed: Record<PushResult, number> };
 
 /**
  * Runs a sync for every connected calendar.
  *
- * Called by Vercel Cron every five minutes, which authenticates with a bearer
- * token and has no session — so this cannot use `requireUserId` and scopes by
+ * Called by pg_cron every five minutes, which authenticates with a bearer token
+ * and has no session — so this cannot use `requireUserId` and scopes by
  * connection row instead. Nearly every run is an empty incremental poll.
  */
 export async function GET(request: Request) {

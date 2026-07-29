@@ -4,9 +4,10 @@ import { renewChannels } from "@/lib/sync/channels";
 import { isCronRequest } from "@/server/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
- * Keeps push notifications alive. Hourly, from Vercel Cron.
+ * Keeps push notifications alive. Hourly, from pg_cron.
  *
  * A calendar channel lasts at most seven days and cannot be extended, so
  * something has to keep opening new ones. Hourly against a one-day renewal

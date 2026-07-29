@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { events } from "@/db/schema";
 import { calendarPath } from "@/lib/date";
+import { requireUserId } from "@/server/auth";
 
 export const runtime = "nodejs";
 
@@ -24,10 +25,20 @@ export const runtime = "nodejs";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
+  let userId: string;
+  try {
+    userId = await requireUserId();
+  } catch {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const [event] = await db
     .select({ startsAt: events.startsAt })
     .from(events)
-    .where(and(eq(events.id, id), isNull(events.deletedAt)))
+    // Scoped to the owner, so a guessed id is indistinguishable from a deleted
+    // one. Without this the redirect target itself discloses the day someone
+    // else's block sits on.
+    .where(and(eq(events.id, id), eq(events.userId, userId), isNull(events.deletedAt)))
     .limit(1);
 
   const url = event ? `${calendarPath("day", event.startsAt)}?open=${id}` : "/";
