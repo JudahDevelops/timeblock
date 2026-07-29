@@ -30,3 +30,15 @@ html,
 body {
   overflow: hidden;
 }
+
+/* BlockNote paints its own rounded, near-black canvas, which reads as a card
+   floating inside the drawer rather than the drawer's own document.
+   Overriding `--bn-colors-editor-background` does not work: BlockNote's stylesheet
+   is injected by the dynamically imported editor chunk, so it lands after this
+   file and wins any tie on source order. Styling `.bn-editor` through `.bn-root`
+   outranks its own single-class rule and settles it regardless of order. */
+.bn-root .bn-editor {
+  background-color: transparent;
+  border-radius: 0;
+  color: inherit;
+}

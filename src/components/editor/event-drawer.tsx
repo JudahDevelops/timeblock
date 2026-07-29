@@ -7,6 +7,7 @@ import { format } from "date-fns";
 
 import type { EventDocument } from "@/app/api/events/[id]/body/route";
 import { dayAtMinutes, MIN_EVENT_MINUTES, minutesSinceMidnight } from "@/lib/calendar/geometry";
+import { useKeyboardInset } from "@/lib/use-keyboard-inset";
 import { cn } from "@/lib/utils";
 
 import { useBodyAutosave, type SaveState } from "./use-body-autosave";
@@ -49,6 +50,8 @@ export function EventDrawer({
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
 }) {
+  const keyboardInset = useKeyboardInset();
+
   const { data, isPending, isError } = useQuery({
     queryKey: ["event-body", eventId],
     queryFn: async (): Promise<EventDocument> => {
@@ -77,6 +80,11 @@ export function EventDrawer({
 
       <aside
         className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-zinc-200 bg-white sm:w-[640px] dark:border-zinc-800 dark:bg-zinc-950"
+        // The drawer is pinned to the layout viewport, which iOS leaves at full
+        // height behind the keyboard. Padding the bottom by whatever the keyboard
+        // covers squeezes the flex column instead, keeping the footer and the last
+        // line of text above it.
+        style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
         role="dialog"
         aria-label={title || "Untitled block"}
       >
@@ -155,10 +163,20 @@ function Header({
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
           aria-label="Close"
         >
-          Esc
+          <svg
+            viewBox="0 0 20 20"
+            className="size-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.75}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M5 5l10 10M15 5L5 15" />
+          </svg>
         </button>
       </div>
 
