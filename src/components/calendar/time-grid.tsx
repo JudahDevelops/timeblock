@@ -613,7 +613,9 @@ export function TimeGrid({
   const draggingId = drag && drag.kind !== "create" && drag.moved ? drag.id : null;
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    // Tagged for the pager, which levels the three panes' scroll offsets
+    // before a swipe so the week sliding in meets you at the same hour.
+    <div ref={scrollRef} data-grid-scroll className="min-h-0 flex-1 overflow-y-auto">
       {hasAllDay ? (
         <div className="border-line bg-surface sticky top-0 z-20 flex border-b">
           <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />

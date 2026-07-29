@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 /** Travel before the gesture is claimed as a page turn rather than a scroll. */
@@ -19,65 +19,78 @@ const COMMIT_MIN_PX = 56;
 const FLICK_MS = 250;
 const FLICK_PX = 28;
 
-/**
- * The pane trails the finger rather than matching it. There is no neighbouring
- * week rendered behind this one — that would mean fetching and laying out three
- * grids to show one — so a 1:1 follow would drag a wide blank into view. At
- * roughly half speed the movement still reads as direct while the gap stays
- * narrow enough to pass for an edge.
- */
-const FOLLOW = 0.5;
-
-/** Long enough to read as deceleration, short enough not to feel held up. */
-const SNAP_MS = 220;
-const SNAP_EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+const SLIDE_MS = 240;
+const SLIDE_EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+/** If `transitionend` never arrives — a backgrounded tab, a cancelled
+ *  animation — the navigation still has to happen. */
+const SLIDE_FALLBACK_MS = SLIDE_MS + 120;
+/** How long a navigation may take before the strip gives up and comes back. */
+const RECOVER_MS = 4000;
 
 /** Anything that owns its own horizontal gesture, or its own text selection. */
 const EXEMPT = "input, textarea, select, [contenteditable], .bn-root";
 
 /**
- * Swipe sideways to page the calendar by whatever period the current view
- * shows — the touch equivalent of `j` and `k`.
+ * The calendar as a strip: the period before and the period after are rendered
+ * either side of the current one, so a swipe reveals the week you are moving
+ * into rather than replacing the one you are looking at.
  *
- * The pane follows the finger instead of jumping on release, because a
- * calendar that changes with no movement gives you nothing to tell a page turn
- * apart from a mis-tap. Below the commit threshold it springs back, which is
- * the part that makes the gesture safe to try.
+ * The strip is offset by a negative margin, not a transform. A transform would
+ * make this element the containing block for every `position: fixed`
+ * descendant — the drawer and the actions sheet both — and pin them inside the
+ * pane instead of the viewport. Transform is therefore applied only while a
+ * finger is actually moving, and a gesture is refused while either is open.
  */
 export function SwipePager({
+  /** Changes exactly when the calendar has navigated; resets the strip. */
+  anchorKey,
   prev,
   next,
-  children,
+  previous,
+  current,
+  following,
 }: {
+  anchorKey: string;
   prev: string;
   next: string;
-  children: React.ReactNode;
+  previous: React.ReactNode;
+  current: React.ReactNode;
+  following: React.ReactNode;
 }) {
   const router = useRouter();
-  const paneRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  /** Set once a page turn is committed, cleared when the new period lands. */
+  const navigatingRef = useRef(false);
+
+  // Before paint, so the strip is already centred on the period that just
+  // arrived. The pane it slid to and the pane it lands on hold the same
+  // content, so nothing visibly moves — which is the whole trick.
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    navigatingRef.current = false;
+    track.style.transition = "";
+    track.style.transform = "";
+    track.style.willChange = "";
+  }, [anchorKey]);
 
   useEffect(() => {
-    const pane = paneRef.current;
-    if (!pane) return;
+    const frame = frameRef.current;
+    const track = trackRef.current;
+    if (!frame || !track) return;
 
     let start: { x: number; y: number; at: number } | null = null;
     /** Which way this gesture went once it committed to one. */
     let axis: "undecided" | "x" | "y" = "undecided";
     let dx = 0;
+    let fallback: number | null = null;
 
-    function settle() {
-      if (!pane) return;
-      pane.style.transition = `transform ${SNAP_MS}ms ${SNAP_EASE}`;
-      pane.style.transform = "";
-      // Cleared rather than left on: a lingering `will-change` keeps a layer
-      // alive, and — like the transform itself — makes this element the
-      // containing block for the drawer's `position: fixed`.
-      window.setTimeout(() => {
-        if (pane && !start) {
-          pane.style.transition = "";
-          pane.style.willChange = "";
-        }
-      }, SNAP_MS);
+    /** Rest, or the neighbour the strip has been slid to. */
+    function glideTo(offset: number) {
+      if (!track) return;
+      track.style.transition = `transform ${SLIDE_MS}ms ${SLIDE_EASE}`;
+      track.style.transform = offset === 0 ? "" : `translate3d(${offset}px, 0, 0)`;
     }
 
     function onTouchStart(event: TouchEvent) {
@@ -85,13 +98,12 @@ export function SwipePager({
       axis = "undecided";
       dx = 0;
 
-      // Two fingers is a pinch or a system gesture; neither is ours.
-      if (event.touches.length !== 1) return;
+      // Two fingers is a pinch or a system gesture; neither is ours. And a turn
+      // already under way owns the strip until its new period arrives.
+      if (event.touches.length !== 1 || navigatingRef.current) return;
 
-      // A sheet or the drawer is up. Both are `position: fixed`, and a
-      // transform on this element would make *it* their containing block —
-      // so the page must not slide while one is open, quite apart from the
-      // fact that a swipe over a menu means nothing.
+      // The drawer and the actions sheet are both `position: fixed`; sliding
+      // the strip beneath one would drag it along by its containing block.
       if (document.querySelector('[role="dialog"]')) return;
 
       const target = event.target as Element | null;
@@ -104,7 +116,7 @@ export function SwipePager({
     }
 
     function onTouchMove(event: TouchEvent) {
-      if (!start || !pane || event.touches.length !== 1) return;
+      if (!start || !track || event.touches.length !== 1) return;
       const touch = event.touches[0];
       const moveX = touch.clientX - start.x;
       const moveY = touch.clientY - start.y;
@@ -116,63 +128,126 @@ export function SwipePager({
           start = null;
           return;
         }
-        pane.style.willChange = "transform";
-        pane.style.transition = "";
+        levelScroll();
+        track.style.willChange = "transform";
+        track.style.transition = "";
       }
 
       dx = moveX;
-      // The listener is registered non-passively for exactly this: once the
-      // gesture is horizontal the grid must stop scrolling under it, or the
-      // day slides sideways and up at the same time.
+      // The listener is non-passive for exactly this: once the gesture is
+      // horizontal the grid must stop scrolling under it, or the day slides
+      // sideways and upwards at once.
       if (event.cancelable) event.preventDefault();
-      pane.style.transform = `translate3d(${dx * FOLLOW}px, 0, 0)`;
+      track.style.transform = `translate3d(${dx}px, 0, 0)`;
     }
 
     function onTouchEnd() {
       const from = start;
       start = null;
-      if (!from || axis !== "x" || !pane) {
+      if (!from || axis !== "x" || !track || !frame) {
         axis = "undecided";
         return;
       }
       axis = "undecided";
 
-      const width = pane.getBoundingClientRect().width || 1;
+      const width = frame.clientWidth || 1;
       const far = Math.abs(dx) > Math.max(COMMIT_MIN_PX, width * COMMIT_FRACTION);
       const flicked = Date.now() - from.at < FLICK_MS && Math.abs(dx) > FLICK_PX;
 
-      // Pushed before the spring back rather than after it: both paths are
-      // prefetched by the toolbar's arrows, so the new period lands while the
-      // pane is still travelling home and the two read as one movement.
-      if (far || flicked) router.push(dx < 0 ? next : prev);
-      settle();
+      if (!far && !flicked) {
+        glideTo(0);
+        return;
+      }
+
+      navigatingRef.current = true;
+      glideTo(dx < 0 ? -width : width);
+      // Navigation waits for the slide to land. There is nothing to wait for
+      // visually — the destination is already the pane on screen — and pushing
+      // early would let the new render reset the strip mid-flight, throwing the
+      // page back to centre as though the swipe had been refused.
+      fallback = window.setTimeout(arrive, SLIDE_FALLBACK_MS);
+    }
+
+    function arrive() {
+      if (!navigatingRef.current) return;
+      if (fallback !== null) {
+        window.clearTimeout(fallback);
+        fallback = null;
+      }
+      router.push(dx < 0 ? next : prev);
+
+      // Normally the new period lands and the layout effect above recentres the
+      // strip. If it never does — a failed navigation — the calendar would sit
+      // off to one side with no way back, so it walks itself home.
+      fallback = window.setTimeout(() => {
+        if (!navigatingRef.current || !track) return;
+        navigatingRef.current = false;
+        glideTo(0);
+      }, RECOVER_MS);
+    }
+
+    function onTransitionEnd(event: TransitionEvent) {
+      if (event.target !== track || event.propertyName !== "transform") return;
+      if (navigatingRef.current) arrive();
+      else if (track) {
+        track.style.transition = "";
+        track.style.willChange = "";
+      }
+    }
+
+    /**
+     * The three panes scroll independently. Levelling them the moment a swipe
+     * is claimed means the period sliding in shows the same hours as the one
+     * sliding out, instead of jumping back to its own opening position.
+     */
+    function levelScroll() {
+      const panes = track?.querySelectorAll<HTMLElement>("[data-grid-scroll]");
+      if (!panes || panes.length < 2) return;
+      const top = panes[1].scrollTop;
+      for (const pane of panes) pane.scrollTop = top;
     }
 
     function onTouchCancel() {
       start = null;
       axis = "undecided";
-      settle();
+      if (!navigatingRef.current) glideTo(0);
     }
 
-    pane.addEventListener("touchstart", onTouchStart, { passive: true });
-    pane.addEventListener("touchmove", onTouchMove, { passive: false });
-    pane.addEventListener("touchend", onTouchEnd, { passive: true });
-    pane.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    frame.addEventListener("touchstart", onTouchStart, { passive: true });
+    frame.addEventListener("touchmove", onTouchMove, { passive: false });
+    frame.addEventListener("touchend", onTouchEnd, { passive: true });
+    frame.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    track.addEventListener("transitionend", onTransitionEnd);
 
     return () => {
-      pane.removeEventListener("touchstart", onTouchStart);
-      pane.removeEventListener("touchmove", onTouchMove);
-      pane.removeEventListener("touchend", onTouchEnd);
-      pane.removeEventListener("touchcancel", onTouchCancel);
+      if (fallback !== null) window.clearTimeout(fallback);
+      frame.removeEventListener("touchstart", onTouchStart);
+      frame.removeEventListener("touchmove", onTouchMove);
+      frame.removeEventListener("touchend", onTouchEnd);
+      frame.removeEventListener("touchcancel", onTouchCancel);
+      track.removeEventListener("transitionend", onTransitionEnd);
     };
-    // `prev` and `next` change only once the calendar has already moved, so
-    // rebinding on them cannot interrupt a gesture in progress. The spring back
-    // is inline style on a DOM node that outlives the rebind, so it plays on
-    // through the navigation — which is the point: the two are one movement.
   }, [router, prev, next]);
 
   return (
-    <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div ref={frameRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div ref={trackRef} className="-ml-[100%] flex h-full w-[300%] shrink-0">
+        <Pane inert>{previous}</Pane>
+        <Pane>{current}</Pane>
+        <Pane inert>{following}</Pane>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One period's worth of calendar. The two either side are `inert`: they are
+ * scenery until a swipe makes one of them the page, and a stray tap landing on
+ * next week's grid would otherwise create a block there.
+ */
+function Pane({ inert = false, children }: { inert?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex h-full w-1/3 min-w-0 shrink-0 flex-col" inert={inert}>
       {children}
     </div>
   );
