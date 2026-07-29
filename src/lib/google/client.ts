@@ -66,8 +66,23 @@ const HISTORY_DAYS = 180;
  */
 const FUTURE_DAYS = 365;
 
-export function fullSyncParams(): URLSearchParams {
-  const now = Date.now();
+export type SyncWindow = { timeMin: Date; timeMax: Date };
+
+/**
+ * The slice of the calendar this app tracks.
+ *
+ * Named and returned rather than inlined below because it is a policy, not a
+ * detail of one request: the sync also has to know what it *didn't* ask for, to
+ * recognise a local row the window no longer covers.
+ */
+export function syncWindow(now = Date.now()): SyncWindow {
+  return {
+    timeMin: new Date(now - HISTORY_DAYS * 86_400_000),
+    timeMax: new Date(now + FUTURE_DAYS * 86_400_000),
+  };
+}
+
+export function fullSyncParams(window: SyncWindow = syncWindow()): URLSearchParams {
   return new URLSearchParams({
     // Instances, not rules: the grid draws concrete blocks, and this keeps
     // recurrence expansion on Google's side where it is already correct.
@@ -75,8 +90,8 @@ export function fullSyncParams(): URLSearchParams {
     // Cancellations have to arrive as rows, or a deleted meeting lingers here.
     showDeleted: "true",
     maxResults: String(PAGE_SIZE),
-    timeMin: new Date(now - HISTORY_DAYS * 86_400_000).toISOString(),
-    timeMax: new Date(now + FUTURE_DAYS * 86_400_000).toISOString(),
+    timeMin: window.timeMin.toISOString(),
+    timeMax: window.timeMax.toISOString(),
   });
 }
 

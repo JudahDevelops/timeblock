@@ -6,7 +6,7 @@ import { calendarConnections } from "@/db/schema";
 import { secretsMatch } from "@/lib/crypto";
 import { serverEnv } from "@/env";
 import { GoogleRevokedError } from "@/lib/google/auth";
-import { fullSync, type SyncOutcome } from "@/lib/sync/engine";
+import { syncConnection, type SyncOutcome } from "@/lib/sync/engine";
 import { requireUserId } from "@/server/auth";
 
 export const runtime = "nodejs";
@@ -14,9 +14,9 @@ export const runtime = "nodejs";
 /**
  * Runs a sync for every connected calendar.
  *
- * Called by Vercel Cron, which authenticates with a bearer token and has no
- * session — so this cannot use `requireUserId` and scopes by connection row
- * instead. Phase 6 turns this into the incremental path.
+ * Called by Vercel Cron every five minutes, which authenticates with a bearer
+ * token and has no session — so this cannot use `requireUserId` and scopes by
+ * connection row instead. Nearly every run is an empty incremental poll.
  */
 export async function GET(request: Request) {
   const provided = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
   for (const connection of connections) {
     try {
-      results[connection.id] = await fullSync(connection.id);
+      results[connection.id] = await syncConnection(connection.id);
     } catch (cause) {
       // One dead connection must not stop the others. A revoked grant is
       // expected and already recorded on the account; anything else is a bug.
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await fullSync(connectionId));
+    return NextResponse.json(await syncConnection(connectionId));
   } catch (cause) {
     if (cause instanceof GoogleRevokedError) {
       return NextResponse.json({ error: "revoked" }, { status: 409 });

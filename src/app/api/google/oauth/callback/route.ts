@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
 import { secretsMatch } from "@/lib/crypto";
 import { exchangeCode, saveGrant } from "@/lib/google/auth";
-import { fullSync } from "@/lib/sync/engine";
+import { syncConnection } from "@/lib/sync/engine";
 import { requireUserId } from "@/server/auth";
 
 import { STATE_COOKIE } from "../start/route";
@@ -73,9 +73,11 @@ export async function GET(request: Request) {
   response.cookies.delete(STATE_COOKIE);
 
   // Synchronous on purpose: the settings page should already show the imported
-  // count when it renders. Phase 6 moves this onto the job queue.
+  // count when it renders. A fresh connection has no token, so this is a full
+  // sync — but reconnecting an existing one resumes incrementally, which is
+  // what keeps the reconnect flow cheap.
   try {
-    await fullSync(connectionId);
+    await syncConnection(connectionId);
   } catch (cause) {
     console.error("First sync failed", cause);
     return back(request, { error: "sync_failed" });

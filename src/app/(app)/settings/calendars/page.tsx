@@ -70,10 +70,10 @@ export default async function CalendarSettingsPage({
         {connections.length > 0 ? (
           <p className="mt-8 text-xs text-zinc-400">
             Last checked{" "}
-            {connections[0].lastFullSyncAt
-              ? format(connections[0].lastFullSyncAt, "d MMM, HH:mm")
+            {connections[0].lastSyncedAt
+              ? format(connections[0].lastSyncedAt, "d MMM, HH:mm")
               : "never"}
-            . Timeblock also re-checks on a schedule.
+            . Timeblock re-checks every five minutes.
           </p>
         ) : null}
       </div>

@@ -1,11 +1,20 @@
 import "server-only";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { calendarConnections, eventLinks, events } from "@/db/schema";
 import { getAccessToken } from "@/lib/google/auth";
-import { fullSyncParams, getCalendar, listEvents, type GoogleEvent } from "@/lib/google/client";
+import {
+  fullSyncParams,
+  getCalendar,
+  GoogleApiError,
+  incrementalParams,
+  listEvents,
+  syncWindow,
+  type GoogleEvent,
+  type SyncWindow,
+} from "@/lib/google/client";
 import { mapGoogleEvent, type MappedEvent } from "./map";
 
 /**
@@ -14,22 +23,29 @@ import { mapGoogleEvent, type MappedEvent } from "./map";
  */
 const MAX_PAGES = 100;
 
+export type SyncMode = "full" | "incremental";
+
 export type SyncOutcome = {
+  mode: SyncMode;
   imported: number;
   cancelled: number;
   skipped: number;
+  /** Rows the window no longer covers. See `pruneOutsideWindow`. */
+  pruned: number;
   syncToken: string | null;
 };
 
+type Connection = typeof calendarConnections.$inferSelect;
+
 /**
- * Pulls a calendar into local rows. Read-only: this never calls Google with
+ * Brings a calendar up to date. Read-only: this never calls Google with
  * anything but GET.
  *
- * Google events land in the same `events` table as local ones, marked
- * `origin: "google"`. A separate table would need every read path duplicated,
- * and from Phase 7 the two kinds converge anyway.
+ * Incremental whenever a sync token survives, which is the normal case and
+ * costs one near-empty request every five minutes instead of a full window.
+ * The full path is the fallback, not the default.
  */
-export async function fullSync(connectionId: string): Promise<SyncOutcome> {
+export async function syncConnection(connectionId: string): Promise<SyncOutcome> {
   const [connection] = await db
     .select()
     .from(calendarConnections)
@@ -38,12 +54,50 @@ export async function fullSync(connectionId: string): Promise<SyncOutcome> {
 
   if (!connection) throw new Error(`Unknown connection ${connectionId}`);
 
+  if (!connection.syncToken) return runSync(connection, "full");
+
+  try {
+    return await runSync(connection, "incremental");
+  } catch (cause) {
+    if (!(cause instanceof GoogleApiError) || !cause.isSyncTokenExpired) throw cause;
+
+    // A 410 means the token is too old to describe the gap, so the only way
+    // forward is to re-read the window. It emphatically does *not* mean the
+    // local rows are wrong: every one of them is matched back through
+    // `event_links` by id, so bodies, `body_rev` and everything else we own
+    // survive being rewritten — verified against a real calendar, not assumed.
+    // The one thing the resync does remove is covered in `pruneOutsideWindow`,
+    // and it will not touch a row with a body.
+    console.warn(`Sync token expired for connection ${connectionId}; falling back to full sync`);
+    return runSync(connection, "full");
+  }
+}
+
+/**
+ * One page loop, two ways in.
+ *
+ * The paging, mapping and writing are identical either way — the modes differ
+ * only in the query that opens them, so they share everything after it. Keeping
+ * them as one function is what guarantees a full resync reconciles by exactly
+ * the same rules as a routine one.
+ */
+async function runSync(connection: Connection, mode: SyncMode): Promise<SyncOutcome> {
   const accessToken = await getAccessToken(connection.googleAccountId);
   const calendar = await getCalendar(accessToken, connection.gcalCalendarId);
   const calendarTz = calendar.timeZone ?? "UTC";
 
-  const params = fullSyncParams();
-  const outcome: SyncOutcome = { imported: 0, cancelled: 0, skipped: 0, syncToken: null };
+  const window = syncWindow();
+  const params =
+    mode === "full" ? fullSyncParams(window) : incrementalParams(connection.syncToken as string);
+
+  const outcome: SyncOutcome = {
+    mode,
+    imported: 0,
+    cancelled: 0,
+    skipped: 0,
+    pruned: 0,
+    syncToken: null,
+  };
 
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -74,14 +128,25 @@ export async function fullSync(connectionId: string): Promise<SyncOutcome> {
     if (!pageToken) break;
   }
 
+  const now = new Date();
+
+  if (mode === "full") outcome.pruned = await pruneOutsideWindow(connection, window, now);
+
   await db
     .update(calendarConnections)
     .set({
+      // Google mints a fresh token every run and retires the one it replaces,
+      // so this always moves forward. Keeping the old one on a run that
+      // somehow returned none would guarantee a 410 on the next.
       syncToken: outcome.syncToken,
-      lastFullSyncAt: new Date(),
-      lastInboundOkAt: new Date(),
+      // Only a full sync re-established the window, so only it moves this.
+      ...(mode === "full" ? { lastFullSyncAt: now } : {}),
+      // Distinct from the above: this is the staleness alarm's clock, and it
+      // has to tick on a run that found nothing at all — which is what a
+      // healthy incremental sync looks like almost every time.
+      lastInboundOkAt: now,
     })
-    .where(eq(calendarConnections.id, connectionId));
+    .where(eq(calendarConnections.id, connection.id));
 
   return outcome;
 }
@@ -91,7 +156,48 @@ function isOurOwnEvent(event: GoogleEvent): boolean {
   return Boolean(event.extendedProperties?.private?.tb_event_id);
 }
 
-type Connection = typeof calendarConnections.$inferSelect;
+/**
+ * Tombstones imported rows the window has moved off.
+ *
+ * Narrowing the window left 111 birthday instances stranded out to 2055: no
+ * sync asks about them again, so nothing ever updates or removes them, and the
+ * month view happily paged to 2050 and showed them. Debris, and it accumulates
+ * every time the policy changes.
+ *
+ * Two guards keep this well clear of the trap that a 410 must never wipe local
+ * work. It fires on the window, never on absence — an event Google simply
+ * failed to mention is left exactly alone. And it refuses any row carrying a
+ * body, because a stranded row with notes in it is the one thing worth more
+ * than a tidy table.
+ *
+ * The `event_links` row is deliberately left live. It is the only thing that
+ * can match this event again, so if the window ever widens the upsert finds it
+ * and clears `deleted_at` — the tombstone is reversible by construction.
+ */
+async function pruneOutsideWindow(
+  connection: Connection,
+  window: SyncWindow,
+  now: Date,
+): Promise<number> {
+  const pruned = await db
+    .update(events)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(
+      and(
+        // Scoped by user rather than by connection: the window is the same for
+        // every calendar, so a join through `event_links` would narrow the set
+        // without changing the verdict on any row in it.
+        eq(events.userId, connection.userId),
+        eq(events.origin, "google"),
+        isNull(events.deletedAt),
+        eq(events.bodyRev, 0),
+        or(lt(events.startsAt, window.timeMin), gt(events.startsAt, window.timeMax)),
+      ),
+    )
+    .returning({ id: events.id });
+
+  return pruned.length;
+}
 
 /**
  * Writes one page of mapped events.

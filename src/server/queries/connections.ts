@@ -10,9 +10,15 @@ export type ConnectionStatus = {
   email: string;
   calendarId: string;
   revoked: boolean;
-  lastFullSyncAt: Date | null;
-  /** Null until the first incremental sync in Phase 6 mints one. */
-  syncToken: string | null;
+  /**
+   * The last run that reached Google at all, incremental or not — which is what
+   * "synced 2 minutes ago" has to mean. `last_full_sync_at` only moves on a
+   * full window, so once incremental syncing takes over it would freeze and
+   * make a healthy connection look abandoned.
+   */
+  lastSyncedAt: Date | null;
+  /** Absent means the next run re-reads the whole window. */
+  hasSyncToken: boolean;
   importedCount: number;
 };
 
@@ -22,7 +28,7 @@ export async function getConnections(userId: string): Promise<ConnectionStatus[]
     .select({
       connectionId: calendarConnections.id,
       calendarId: calendarConnections.gcalCalendarId,
-      lastFullSyncAt: calendarConnections.lastFullSyncAt,
+      lastInboundOkAt: calendarConnections.lastInboundOkAt,
       syncToken: calendarConnections.syncToken,
       email: googleAccounts.email,
       revokedAt: googleAccounts.revokedAt,
@@ -43,8 +49,8 @@ export async function getConnections(userId: string): Promise<ConnectionStatus[]
     email: row.email,
     calendarId: row.calendarId,
     revoked: row.revokedAt !== null,
-    lastFullSyncAt: row.lastFullSyncAt,
-    syncToken: row.syncToken,
+    lastSyncedAt: row.lastInboundOkAt,
+    hasSyncToken: row.syncToken !== null,
     // Per user rather than per connection: only one calendar is syncable today,
     // and splitting the count would need a join through event_links for nothing.
     importedCount: imported,

@@ -31,7 +31,14 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
             : "Sync failed. Try again.",
         );
       } else {
-        setMessage(`Imported ${result.imported}, removed ${result.cancelled}.`);
+        // A healthy incremental sync almost always finds nothing, and
+        // "Imported 0, removed 0" reads like a failure rather than the
+        // all-clear it is.
+        setMessage(
+          result.imported === 0 && result.cancelled === 0
+            ? "Already up to date."
+            : `Imported ${result.imported}, removed ${result.cancelled}.`,
+        );
         router.refresh();
       }
     } catch {
@@ -59,8 +66,8 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
           <p className="mt-0.5 text-xs text-zinc-500">
             {connection.calendarId === "primary" ? "Primary calendar" : connection.calendarId} ·{" "}
             {connection.importedCount} event{connection.importedCount === 1 ? "" : "s"} imported
-            {connection.lastFullSyncAt
-              ? ` · synced ${formatDistanceToNow(connection.lastFullSyncAt, { addSuffix: true })}`
+            {connection.lastSyncedAt
+              ? ` · synced ${formatDistanceToNow(connection.lastSyncedAt, { addSuffix: true })}`
               : " · never synced"}
           </p>
         </div>
