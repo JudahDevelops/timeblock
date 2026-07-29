@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { CommandPalette } from "@/components/search/command-palette";
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { CALENDAR_VIEWS, calendarPath, shiftAnchor, type CalendarView } from "@/lib/date";
+import { useSwipeNav } from "@/lib/use-swipe-nav";
 import { cn } from "@/lib/utils";
 import { DateJump } from "./date-jump";
 
@@ -39,6 +40,10 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
   const prev = calendarPath(view, shiftAnchor(anchor, view, -1));
   const next = calendarPath(view, shiftAnchor(anchor, view, 1));
   const today = calendarPath(view, new Date());
+
+  // Paging lives here because the paths do. Keys and swipes are the same
+  // navigation wearing different input devices.
+  useSwipeNav(prev, next);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
