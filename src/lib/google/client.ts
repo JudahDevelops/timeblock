@@ -59,8 +59,15 @@ export class GoogleApiError extends Error {
  */
 const HISTORY_DAYS = 180;
 
+/**
+ * Bounded forwards for the same reason, and it is not hypothetical: a contacts
+ * birthday recurs yearly with no end, and Google expanded eighteen of them into
+ * 558 instances stretching three decades out — 98% of the first real import.
+ */
+const FUTURE_DAYS = 365;
+
 export function fullSyncParams(): URLSearchParams {
-  const timeMin = new Date(Date.now() - HISTORY_DAYS * 86_400_000);
+  const now = Date.now();
   return new URLSearchParams({
     // Instances, not rules: the grid draws concrete blocks, and this keeps
     // recurrence expansion on Google's side where it is already correct.
@@ -68,7 +75,8 @@ export function fullSyncParams(): URLSearchParams {
     // Cancellations have to arrive as rows, or a deleted meeting lingers here.
     showDeleted: "true",
     maxResults: String(PAGE_SIZE),
-    timeMin: timeMin.toISOString(),
+    timeMin: new Date(now - HISTORY_DAYS * 86_400_000).toISOString(),
+    timeMax: new Date(now + FUTURE_DAYS * 86_400_000).toISOString(),
   });
 }
 
