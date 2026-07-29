@@ -611,20 +611,20 @@ export function TimeGrid({
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
       {hasAllDay ? (
-        <div className="sticky top-0 z-20 flex border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="border-line bg-surface sticky top-0 z-20 flex border-b">
           <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />
           <div className="flex flex-1">
             {days.map((day, dayIndex) => (
               <div
                 key={day.toISOString()}
-                className="flex min-w-0 flex-1 flex-col gap-1 border-r border-zinc-200 p-1 last:border-r-0 dark:border-zinc-800"
+                className="border-line flex min-w-0 flex-1 flex-col gap-1 border-r p-1 last:border-r-0"
               >
                 {allDayByDay[dayIndex].map((event) => (
                   <button
                     key={event.id}
                     type="button"
                     onClick={() => setOpenId(event.id)}
-                    className="truncate rounded bg-zinc-100 px-1.5 py-0.5 text-left text-[11px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
+                    className="bg-surface-raised text-ink-muted truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium"
                   >
                     {event.title || "Untitled"}
                   </button>
@@ -641,7 +641,7 @@ export function TimeGrid({
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="absolute right-2 -translate-y-1/2 text-[11px] text-zinc-400 tabular-nums"
+              className="text-ink-faint absolute right-2 -translate-y-1/2 text-[11px] tabular-nums"
               style={{ top: minutesToY(hour * 60) }}
             >
               {hour === 0 ? "" : `${hour.toString().padStart(2, "0")}:00`}
@@ -655,7 +655,7 @@ export function TimeGrid({
             {HOURS.map((hour) => (
               <div
                 key={hour}
-                className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+                className="border-line absolute inset-x-0 border-t"
                 style={{ top: minutesToY(hour * 60) }}
               />
             ))}
@@ -805,7 +805,7 @@ const DayColumn = memo(function DayColumn({
   return (
     <div
       ref={(el) => registerColumn(dayIndex, el)}
-      className="relative flex-1 border-r border-zinc-200 last:border-r-0 dark:border-zinc-800"
+      className="border-line relative flex-1 border-r last:border-r-0"
       onPointerDown={(event) => onColumnPointerDown(dayIndex, event)}
       onPointerUp={(event) => onColumnTap(dayIndex, event)}
       onPointerCancel={onColumnPointerCancel}
@@ -835,7 +835,7 @@ const DayColumn = memo(function DayColumn({
       {/* Live preview while dragging out a brand-new block. */}
       {preview && !preview.id ? (
         <div
-          className="pointer-events-none absolute inset-x-1 rounded-md border border-zinc-200 bg-zinc-100/80 dark:border-zinc-800 dark:bg-zinc-900/80"
+          className="border-line bg-surface-raised/80 pointer-events-none absolute inset-x-1 rounded-md border"
           style={{
             top: minutesToY(preview.startMinutes),
             height: minutesToY(preview.endMinutes - preview.startMinutes),

@@ -12,7 +12,7 @@ export function GridSkeleton({ columns }: { columns: number }) {
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="absolute right-2 -translate-y-1/2 text-[11px] text-zinc-400 tabular-nums"
+              className="text-ink-faint absolute right-2 -translate-y-1/2 text-[11px] tabular-nums"
               style={{ top: minutesToY(hour * 60) }}
             >
               {hour === 0 ? "" : `${hour.toString().padStart(2, "0")}:00`}
@@ -25,17 +25,14 @@ export function GridSkeleton({ columns }: { columns: number }) {
             {HOURS.map((hour) => (
               <div
                 key={hour}
-                className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+                className="border-line absolute inset-x-0 border-t"
                 style={{ top: minutesToY(hour * 60) }}
               />
             ))}
           </div>
 
           {Array.from({ length: columns }, (_, i) => (
-            <div
-              key={i}
-              className="flex-1 border-r border-zinc-200 last:border-r-0 dark:border-zinc-800"
-            />
+            <div key={i} className="border-line flex-1 border-r last:border-r-0" />
           ))}
         </div>
       </div>

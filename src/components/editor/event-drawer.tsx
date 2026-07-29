@@ -14,7 +14,7 @@ import { useBodyAutosave, type SaveState } from "./use-body-autosave";
 
 const BlockEditor = dynamic(() => import("./block-editor"), {
   ssr: false,
-  loading: () => <div className="px-14 py-8 text-sm text-zinc-400">Loading editor…</div>,
+  loading: () => <div className="text-ink-faint px-14 py-8 text-sm">Loading editor…</div>,
 });
 
 function parseTimeInput(value: string): number | null {
@@ -91,7 +91,7 @@ export function EventDrawer({
       />
 
       <aside
-        className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-zinc-200 bg-white sm:w-[640px] dark:border-zinc-800 dark:bg-zinc-950"
+        className="border-line bg-surface fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l sm:w-[640px]"
         // The drawer is pinned to the layout viewport, which iOS leaves at full
         // height behind the keyboard. Padding the bottom by whatever the keyboard
         // covers squeezes the flex column instead, keeping the footer and the last
@@ -112,11 +112,11 @@ export function EventDrawer({
         />
 
         {isError ? (
-          <p className="px-6 py-8 text-sm text-red-600">
+          <p className="text-danger px-6 py-8 text-sm">
             Couldn&apos;t load this block. Close and try again.
           </p>
         ) : isPending ? (
-          <p className="px-6 py-8 text-sm text-zinc-400">Loading…</p>
+          <p className="text-ink-faint px-6 py-8 text-sm">Loading…</p>
         ) : (
           <Body doc={data} onClose={onClose} />
         )}
@@ -165,7 +165,7 @@ function Header({
   };
 
   return (
-    <header className="flex shrink-0 flex-col gap-3 border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+    <header className="border-line flex shrink-0 flex-col gap-3 border-b px-6 py-4">
       <div className="flex items-start gap-3">
         <input
           defaultValue={title}
@@ -173,7 +173,7 @@ function Header({
           readOnly={readOnly}
           // Keyed on the id upstream, so a fresh drawer always shows its own
           // title even though this input is uncontrolled.
-          className="min-w-0 flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-zinc-400"
+          className="placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-lg font-semibold outline-none"
           onBlur={(event) => onRename(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
@@ -182,7 +182,7 @@ function Header({
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+          className="text-ink-muted hover:bg-surface-raised shrink-0 rounded-md p-1.5"
           aria-label="Close"
         >
           <svg
@@ -199,7 +199,7 @@ function Header({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-zinc-500">
+      <div className="text-ink-muted flex items-center gap-2 text-sm">
         <span className="tabular-nums">{format(startsAt, "EEE d MMM")}</span>
         {readOnly ? (
           <span className="tabular-nums">
@@ -218,14 +218,10 @@ function Header({
         )}
         <span className="ml-auto flex items-center gap-1.5">
           {recurring ? (
-            <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
-              Repeats
-            </span>
+            <span className="bg-surface-raised rounded px-1.5 py-0.5 text-xs">Repeats</span>
           ) : null}
           {readOnly ? (
-            <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
-              Google
-            </span>
+            <span className="bg-surface-raised rounded px-1.5 py-0.5 text-xs">Google</span>
           ) : null}
         </span>
       </div>
@@ -249,7 +245,7 @@ function TimeInput({
       aria-label={label}
       value={format(value, "HH:mm")}
       onChange={(event) => onChange(event.currentTarget.value)}
-      className="rounded-md bg-zinc-100 px-2 py-1 tabular-nums outline-none dark:bg-zinc-900"
+      className="bg-surface-raised rounded-md px-2 py-1 tabular-nums outline-none"
     />
   );
 }
@@ -279,7 +275,7 @@ function Body({ doc, onClose }: { doc: EventDocument; onClose: () => void }) {
   return (
     <>
       {conflict ? (
-        <p className="shrink-0 bg-amber-50 px-6 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="bg-warn-surface text-warn shrink-0 px-6 py-2 text-sm">
           This block changed somewhere else. Nothing here is being saved — copy anything new, then
           reopen it.
         </p>
@@ -289,11 +285,11 @@ function Body({ doc, onClose }: { doc: EventDocument; onClose: () => void }) {
         <BlockEditor initialContent={doc.body} onChange={scheduleSave} />
       </div>
 
-      <footer className="flex shrink-0 items-center justify-end border-t border-zinc-200 px-6 py-2 dark:border-zinc-800">
+      <footer className="border-line flex shrink-0 items-center justify-end border-t px-6 py-2">
         <span
           className={cn(
             "text-xs",
-            state === "error" || state === "conflict" ? "text-red-600" : "text-zinc-400",
+            state === "error" || state === "conflict" ? "text-danger" : "text-ink-faint",
           )}
         >
           {STATUS_LABEL[state]}

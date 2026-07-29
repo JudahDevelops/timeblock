@@ -63,7 +63,7 @@ export function DateJump({ view, anchor }: { view: CalendarView; anchor: Date })
         type="button"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
-        className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900"
+        className="hover:bg-surface-raised flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm font-medium transition-colors"
       >
         <h1 className="truncate">
           {/* The long label is the honest one; below `sm` there is no room for
@@ -71,7 +71,7 @@ export function DateJump({ view, anchor }: { view: CalendarView; anchor: Date })
           <span className="hidden sm:inline">{rangeLabel(anchor, view)}</span>
           <span className="sm:hidden">{shortRangeLabel(anchor, view)}</span>
         </h1>
-        <span aria-hidden className="shrink-0 text-[10px] text-zinc-400">
+        <span aria-hidden className="text-ink-faint shrink-0 text-[10px]">
           ▾
         </span>
       </button>
@@ -118,7 +118,7 @@ function Panel({
         : `${yearPageStart(cursor)} – ${yearPageStart(cursor) + YEARS_PER_PAGE - 1}`;
 
   return (
-    <div className="absolute top-full left-0 z-50 mt-1 w-64 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="border-line bg-surface absolute top-full left-0 z-50 mt-1 w-64 rounded-xl border p-2 shadow-xl">
       <div className="flex items-center gap-1 pb-1">
         <button type="button" aria-label="Previous" onClick={() => page(-1)} className={stepClass}>
           ‹
@@ -128,7 +128,7 @@ function Panel({
           // Each press climbs a level; at the top there is nowhere further up.
           onClick={() => setLevel(level === "days" ? "months" : "years")}
           disabled={level === "years"}
-          className="flex-1 rounded-md py-1 text-xs font-medium transition-colors hover:bg-zinc-100 disabled:hover:bg-transparent dark:hover:bg-zinc-900"
+          className="hover:bg-surface-raised flex-1 rounded-md py-1 text-xs font-medium transition-colors disabled:hover:bg-transparent"
         >
           {heading}
         </button>
@@ -193,7 +193,7 @@ function DayPicker({
   return (
     <div className="grid grid-cols-7 gap-0.5">
       {days.slice(0, 7).map((day) => (
-        <div key={`h${day.toISOString()}`} className="pb-1 text-center text-[10px] text-zinc-400">
+        <div key={`h${day.toISOString()}`} className="text-ink-faint pb-1 text-center text-[10px]">
           {format(day, "EEEEE")}
         </div>
       ))}
@@ -205,11 +205,9 @@ function DayPicker({
           onClick={() => onPick(day)}
           className={cn(
             "flex h-7 items-center justify-center rounded-md text-xs tabular-nums transition-colors",
-            !isSameMonth(day, cursor) && "text-zinc-300 dark:text-zinc-600",
-            isSameDay(day, anchor)
-              ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-              : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
-            isSameDay(day, today) && !isSameDay(day, anchor) && "font-semibold text-blue-600",
+            !isSameMonth(day, cursor) && "text-ink-faint",
+            isSameDay(day, anchor) ? "bg-ink text-surface" : "hover:bg-surface-raised",
+            isSameDay(day, today) && !isSameDay(day, anchor) && "text-accent font-semibold",
           )}
         >
           {format(day, "d")}
@@ -233,9 +231,7 @@ function Cells({
           onClick={item.onPick}
           className={cn(
             "rounded-md py-2 text-xs font-medium tabular-nums transition-colors",
-            item.active
-              ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-              : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
+            item.active ? "bg-ink text-surface" : "hover:bg-surface-raised",
           )}
         >
           {item.label}
@@ -246,4 +242,4 @@ function Cells({
 }
 
 const stepClass =
-  "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-900";
+  "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-raised";

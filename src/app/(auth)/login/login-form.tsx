@@ -41,14 +41,14 @@ export function LoginForm() {
         type="button"
         onClick={signIn}
         disabled={pending}
-        className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-zinc-200 bg-white text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900"
+        className="border-line bg-surface text-ink hover:bg-surface-sunken flex h-11 w-full items-center justify-center gap-3 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60"
       >
         <GoogleMark />
         {pending ? "Redirecting…" : "Continue with Google"}
       </button>
 
       {error ? (
-        <p role="alert" className="mt-3 text-sm text-red-600">
+        <p role="alert" className="text-danger mt-3 text-sm">
           {error}
         </p>
       ) : null}

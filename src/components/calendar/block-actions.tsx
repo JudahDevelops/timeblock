@@ -42,8 +42,8 @@ export function BlockActions({
         }}
       />
 
-      <div className="relative m-2 overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900">
-        <div className="truncate px-4 py-3 text-xs font-medium text-zinc-500">
+      <div className="bg-surface-raised border-line relative m-2 overflow-hidden rounded-2xl border shadow-xl">
+        <div className="text-ink-muted truncate px-4 py-3 text-xs font-medium">
           {title || "Untitled"}
         </div>
         <Action label="Open" onSelect={onOpen} />
@@ -56,7 +56,7 @@ export function BlockActions({
       </div>
 
       <button
-        className="relative m-2 rounded-2xl bg-white py-3.5 text-sm font-medium shadow-xl dark:bg-zinc-900"
+        className="bg-surface-raised border-line relative m-2 rounded-2xl border py-3.5 text-sm font-medium shadow-xl"
         onPointerDown={(event) => {
           event.preventDefault();
           onClose();
@@ -79,8 +79,8 @@ function Action({
 }) {
   return (
     <button
-      className={`w-full border-t border-zinc-100 px-4 py-3.5 text-left text-sm dark:border-zinc-800 ${
-        destructive ? "text-red-600 dark:text-red-400" : ""
+      className={`border-line w-full border-t px-4 py-3.5 text-left text-sm ${
+        destructive ? "text-danger" : ""
       }`}
       // Pointer down, not click: the sheet is opened mid-gesture by a long
       // press, and waiting for a full click would swallow the first tap.

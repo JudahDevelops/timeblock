@@ -59,18 +59,18 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="border-line rounded-lg border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{connection.email}</p>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="text-ink-muted mt-0.5 text-xs">
             {connection.calendarId === "primary" ? "Primary calendar" : connection.calendarId} ·{" "}
             {connection.importedCount} event{connection.importedCount === 1 ? "" : "s"} imported
             {connection.lastSyncedAt
               ? ` · synced ${formatDistanceToNow(connection.lastSyncedAt, { addSuffix: true })}`
               : " · never synced"}
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="text-ink-muted mt-0.5 text-xs">
             {connection.live
               ? "Live — Google pushes changes as they happen"
               : "Checking for changes every 5 minutes"}
@@ -82,7 +82,7 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
             type="button"
             onClick={syncNow}
             disabled={syncing || connection.revoked}
-            className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium disabled:opacity-50 dark:border-zinc-800"
+            className="border-line rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           >
             {syncing ? "Syncing…" : "Sync now"}
           </button>
@@ -90,7 +90,7 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
             type="button"
             onClick={disconnect}
             disabled={pending}
-            className="rounded-md px-3 py-1.5 text-xs font-medium text-red-600 disabled:opacity-50 dark:text-red-400"
+            className="text-danger rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           >
             Disconnect
           </button>
@@ -98,19 +98,19 @@ export function ConnectionCard({ connection }: { connection: ConnectionStatus })
       </div>
 
       {connection.revoked ? (
-        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="bg-warn-surface text-warn mt-3 rounded-md px-3 py-2 text-xs">
           Google revoked this grant. Connect again to resume syncing — your existing blocks and
           their notes are untouched.
         </p>
       ) : null}
 
       {connection.stale ? (
-        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="bg-warn-surface text-warn mt-3 rounded-md px-3 py-2 text-xs">
           No update from Google in a while. Nothing is lost — press Sync now to catch up.
         </p>
       ) : null}
 
-      {message ? <p className="mt-3 text-xs text-zinc-500">{message}</p> : null}
+      {message ? <p className="text-ink-muted mt-3 text-xs">{message}</p> : null}
     </div>
   );
 }

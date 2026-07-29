@@ -32,7 +32,7 @@ export function CommandPalette({ view }: { view: CalendarView }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Search"
-        className="flex items-center gap-2 rounded-md border border-zinc-200 px-1.5 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-50 sm:px-2.5 dark:border-zinc-800 dark:hover:bg-zinc-900"
+        className="border-line text-ink-muted hover:bg-surface-sunken flex items-center gap-2 rounded-md border px-1.5 py-1 text-xs transition-colors sm:px-2.5"
       >
         <svg
           viewBox="0 0 20 20"
@@ -109,7 +109,7 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
       <div
         role="dialog"
         aria-label="Search blocks"
-        className="relative flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+        className="border-line bg-surface relative flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border shadow-2xl"
       >
         <input
           autoFocus
@@ -121,7 +121,7 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
           onKeyDown={onKeyDown}
           placeholder="Search titles and block bodies…"
           aria-label="Search blocks"
-          className="shrink-0 border-b border-zinc-200 bg-transparent px-4 py-3 text-sm outline-none placeholder:text-zinc-400 dark:border-zinc-800"
+          className="border-line placeholder:text-ink-faint shrink-0 border-b bg-transparent px-4 py-3 text-sm outline-none"
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto p-1">
@@ -135,19 +135,19 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
               onPointerEnter={() => setActive(i)}
               className={cn(
                 "flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left",
-                i === index && "bg-zinc-100 dark:bg-zinc-900",
+                i === index && "bg-surface-raised",
               )}
             >
               <span className="flex w-full items-baseline gap-2">
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {hit.title || "Untitled block"}
                 </span>
-                <span className="shrink-0 text-xs text-zinc-400 tabular-nums">
+                <span className="text-ink-faint shrink-0 text-xs tabular-nums">
                   {format(new Date(hit.startsAt), "d MMM · HH:mm")}
                 </span>
               </span>
               {hit.snippet ? (
-                <span className="line-clamp-1 text-xs text-zinc-500">
+                <span className="text-ink-muted line-clamp-1 text-xs">
                   <Snippet text={hit.snippet} />
                 </span>
               ) : null}
@@ -155,7 +155,7 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
           ))}
 
           {results.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-zinc-400">
+            <p className="text-ink-faint px-3 py-6 text-center text-sm">
               {!debounced.trim()
                 ? "Type to search every block you have written."
                 : isFetching
@@ -178,9 +178,7 @@ function Snippet({ text }: { text: string }) {
         const [matched, rest] = chunk.split(HIGHLIGHT_END);
         return (
           <span key={i}>
-            <mark className="bg-transparent font-medium text-zinc-900 dark:text-zinc-100">
-              {matched}
-            </mark>
+            <mark className="text-ink bg-transparent font-medium">{matched}</mark>
             {rest}
           </span>
         );

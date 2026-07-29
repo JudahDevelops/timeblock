@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { CommandPalette } from "@/components/search/command-palette";
+import { SidebarTrigger } from "@/components/shell/app-shell";
 import { CALENDAR_VIEWS, calendarPath, shiftAnchor, type CalendarView } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { DateJump } from "./date-jump";
@@ -62,10 +63,12 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
   }, [router, prev, next, today, anchor]);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 px-2 sm:gap-3 sm:px-4 dark:border-zinc-800">
+    <header className="border-line flex h-14 shrink-0 items-center gap-1.5 border-b px-2 sm:gap-3 sm:px-4">
+      <SidebarTrigger />
+
       <Link
         href={today}
-        className="shrink-0 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+        className="border-line hover:bg-surface-sunken shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
       >
         Today
       </Link>
@@ -92,9 +95,7 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
             aria-label={VIEW_LABELS[v]}
             className={cn(
               "rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors sm:px-2.5",
-              v === view
-                ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-                : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900",
+              v === view ? "bg-ink text-surface" : "text-ink-muted hover:bg-surface-raised",
             )}
           >
             <span className="hidden sm:inline">{VIEW_LABELS[v]}</span>
@@ -107,4 +108,4 @@ export function CalendarToolbar({ view, anchor }: { view: CalendarView; anchor: 
 }
 
 const arrowClass =
-  "flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 sm:w-7 dark:hover:bg-zinc-900";
+  "flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-raised sm:w-7";

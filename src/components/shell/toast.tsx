@@ -46,12 +46,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4"
       >
         {message ? (
-          <div className="pointer-events-auto flex items-center gap-3 rounded-lg bg-zinc-900 px-4 py-2 text-sm text-zinc-50 shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
+          <div className="bg-ink text-surface pointer-events-auto flex items-center gap-3 rounded-lg px-4 py-2 text-sm shadow-lg">
             <span>{message}</span>
             <button
               type="button"
               onClick={() => setMessage(null)}
-              className="text-xs text-zinc-400 transition-colors hover:text-zinc-200 dark:text-zinc-500 dark:hover:text-zinc-700"
+              className="text-surface/60 hover:text-surface text-xs transition-colors"
             >
               Dismiss
             </button>

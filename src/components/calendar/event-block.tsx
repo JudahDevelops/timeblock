@@ -85,16 +85,18 @@ export function EventBlock({
   return (
     <div
       className={cn(
-        "absolute overflow-visible rounded-md border px-2 py-1 shadow-sm transition-shadow select-none",
+        "absolute overflow-visible rounded-md border px-2 py-1 transition-colors select-none",
         // One fill for every block, imported or planned. Origin is not worth a
         // colour: what you actually need to see at a glance is the shape of the
         // day, and two palettes fighting each other obscured it.
-        "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
+        //
+        // No drop shadow either. A dozen of them down a column read as cards
+        // stacked above the page, and the hairline is enough to separate a block
+        // from the hour rule behind it without lifting it off the grid.
+        "border-line bg-surface-raised text-ink hover:border-ink-faint",
         // The ring, not the background, marks selection — it stays legible at
         // 15-minute heights and reads the same under a finger as under a cursor.
-        isSelected || isDraft
-          ? "z-10 ring-2 ring-blue-500 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950"
-          : "",
+        isSelected || isDraft ? "ring-accent ring-offset-surface z-10 ring-2 ring-offset-1" : "",
       )}
       style={{
         top: minutesToY(startMinutes),
@@ -269,7 +271,7 @@ function Grabber({ edge }: { edge: "start" | "end" }) {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute left-1/2 h-1.5 w-8 -translate-x-1/2 rounded-full bg-blue-500 ring-2 ring-white dark:ring-zinc-950",
+        "bg-accent ring-surface pointer-events-none absolute left-1/2 h-1.5 w-8 -translate-x-1/2 rounded-full ring-2",
         edge === "start" ? "-top-0.5" : "-bottom-0.5",
       )}
     />

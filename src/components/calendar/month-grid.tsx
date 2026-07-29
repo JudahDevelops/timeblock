@@ -73,11 +73,11 @@ export function MonthGrid({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid shrink-0 grid-cols-7 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="border-line grid shrink-0 grid-cols-7 border-b">
         {weekdays.map((initial, i) => (
           <div
             key={i}
-            className="py-2 text-center text-[11px] font-medium tracking-wide text-zinc-400 uppercase"
+            className="text-ink-faint py-2 text-center text-[11px] font-medium tracking-wide uppercase"
           >
             {initial}
           </div>
@@ -145,16 +145,16 @@ function DayCell({
   const dayHref = calendarPath("day", day);
 
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-b border-zinc-200 px-1 pt-1 pb-0.5 last:border-r-0 dark:border-zinc-800">
+    <div className="border-line flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-b px-1 pt-1 pb-0.5 last:border-r-0">
       <a
         href={dayHref}
         className={cn(
           "mx-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-colors",
           today
-            ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+            ? "bg-ink text-surface"
             : outside
-              ? "text-zinc-300 hover:bg-zinc-100 dark:text-zinc-600 dark:hover:bg-zinc-900"
-              : "hover:bg-zinc-100 dark:hover:bg-zinc-900",
+              ? "text-ink-faint hover:bg-surface-raised"
+              : "hover:bg-surface-raised",
         )}
       >
         {format(day, "d")}
@@ -166,7 +166,7 @@ function DayCell({
           type="button"
           onClick={() => onOpenEvent(event.id)}
           className={cn(
-            "truncate rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 text-left text-[10px] leading-tight font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
+            "border-line bg-surface-raised text-ink truncate rounded border px-1 py-0.5 text-left text-[10px] leading-tight font-medium",
             outside && "opacity-60",
           )}
         >
@@ -175,7 +175,7 @@ function DayCell({
       ))}
 
       {hidden > 0 ? (
-        <a href={dayHref} className="px-1 text-[10px] text-zinc-400 hover:underline">
+        <a href={dayHref} className="text-ink-faint px-1 text-[10px] hover:underline">
           +{hidden} more
         </a>
       ) : null}

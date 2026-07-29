@@ -13,13 +13,13 @@ export default function AppNotFound() {
     <div className="flex flex-1 items-center justify-center p-8">
       <div className="max-w-sm space-y-4 text-center">
         <h1 className="text-lg font-semibold tracking-tight">No such page</h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-ink-muted text-sm">
           That date or view doesn&apos;t exist. Try a URL like{" "}
-          <code className="font-mono text-xs text-zinc-400">/calendar/week/2026-07-29</code>.
+          <code className="text-ink-faint font-mono text-xs">/calendar/week/2026-07-29</code>.
         </p>
         <Link
           href={calendarPath("week", new Date())}
-          className="inline-block rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          className="bg-ink text-surface inline-block rounded-md px-3 py-1.5 text-sm font-medium transition-opacity hover:opacity-90"
         >
           Back to this week
         </Link>

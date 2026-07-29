@@ -27,23 +27,23 @@ export default async function CalendarSettingsPage({
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Link
           href={calendarPath("week", new Date())}
-          className="text-sm text-zinc-500 underline-offset-4 hover:underline"
+          className="text-ink-muted text-sm underline-offset-4 hover:underline"
         >
           ← Calendar
         </Link>
 
         <h1 className="mt-6 text-xl font-semibold tracking-tight">Google Calendar</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="text-ink-muted mt-1 text-sm">
           Timeblock reads your primary calendar so meetings show up on the grid. It writes nothing
           back, and the notes you keep inside a block never leave here.
         </p>
 
         {error ? (
-          <p className="mt-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+          <p className="bg-danger-surface text-danger mt-6 rounded-lg px-4 py-3 text-sm">
             {ERRORS[error] ?? "Something went wrong connecting Google."}
           </p>
         ) : connected ? (
-          <p className="mt-6 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <p className="bg-ok-surface text-ok mt-6 rounded-lg px-4 py-3 text-sm">
             Connected. Your calendar has been imported.
           </p>
         ) : null}
@@ -54,7 +54,7 @@ export default async function CalendarSettingsPage({
           ))}
 
           {connections.length === 0 ? (
-            <p className="text-sm text-zinc-500">No calendar connected yet.</p>
+            <p className="text-ink-muted text-sm">No calendar connected yet.</p>
           ) : null}
         </div>
 
@@ -62,13 +62,13 @@ export default async function CalendarSettingsPage({
             to Google and back, and it has to set a state cookie on the way. */}
         <a
           href="/api/google/oauth/start"
-          className="mt-6 inline-flex rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+          className="bg-ink text-surface mt-6 inline-flex rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
         >
           {connections.length === 0 ? "Connect Google Calendar" : "Connect another account"}
         </a>
 
         {connections.length > 0 ? (
-          <p className="mt-8 text-xs text-zinc-400">
+          <p className="text-ink-faint mt-8 text-xs">
             Last checked{" "}
             {connections[0].lastSyncedAt
               ? format(connections[0].lastSyncedAt, "d MMM, HH:mm")

@@ -61,19 +61,18 @@ export default async function CalendarPage({
     <>
       <CalendarToolbar view={view} anchor={anchor} />
 
-      <div className="flex shrink-0 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="border-line flex shrink-0 border-b">
         <div className="w-14 shrink-0" />
         <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
           {days.map((day) => (
             <div key={day.toISOString()} className="px-2 py-2">
-              <div className="text-[11px] tracking-wide text-zinc-400 uppercase">
+              <div className="text-ink-faint text-[11px] tracking-wide uppercase">
                 {format(day, "EEE")}
               </div>
               <div
                 className={cn(
                   "mt-0.5 flex h-7 w-7 items-center justify-center text-sm font-medium",
-                  isToday(day) &&
-                    "rounded-full bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900",
+                  isToday(day) && "bg-ink text-surface rounded-full",
                 )}
               >
                 {format(day, "d")}

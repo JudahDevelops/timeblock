@@ -24,8 +24,8 @@ export function NowIndicator() {
       style={{ top: minutesToY(minutes) }}
       aria-hidden="true"
     >
-      <div className="h-2 w-2 -translate-x-1/2 rounded-full bg-red-500" />
-      <div className="h-px flex-1 bg-red-500" />
+      <div className="bg-now h-2 w-2 -translate-x-1/2 rounded-full" />
+      <div className="bg-now h-px flex-1" />
     </div>
   );
 }

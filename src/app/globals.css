@@ -1,27 +1,103 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* `dark:` must answer to a class, not to the OS.
+   Tailwind v4 resolves the variant to `prefers-color-scheme` by default, which
+   nothing in the app can override — so a switcher is impossible until this is
+   redefined. `:where()` keeps specificity at zero, so a `dark:` utility still
+   loses to a later plain one exactly as it did before. */
+@custom-variant dark (&:where(.dark, .dark *));
 
+/* Semantic names, not scale positions.
+   Components used to hand-write `bg-zinc-100 dark:bg-zinc-900` in 21 files, so
+   every palette change was a 95-site find-and-replace and every new component
+   was a chance to pick a slightly different grey. These say what a colour is
+   *for*; the two blocks below say what it currently is. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-now: var(--now);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-warn: var(--warn);
+  --color-warn-surface: var(--warn-surface);
+  --color-ok: var(--ok);
+  --color-ok-surface: var(--ok-surface);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Tells the browser how to paint what we do not: scrollbars, and the native
+     `<input type="time">` popup in the drawer. Under `prefers-color-scheme`
+     this came free; under a class it has to be declared, or the time picker
+     stays light on a dark page. */
+  color-scheme: light;
+
+  --surface: #ffffff;
+  --surface-sunken: #fafafa;
+  --surface-raised: #f4f4f5;
+  --line: #e4e4e7;
+  /* Half-hour rules sit a step below the hour rules, so the grid reads as
+     hours at a glance and only resolves into halves when looked at. */
+  --line-soft: #f4f4f5;
+  --ink: #18181b;
+  --ink-muted: #71717a;
+  --ink-faint: #a1a1aa;
+  --accent: #2563eb;
+  --accent-ink: #ffffff;
+  /* Deliberately its own token rather than an alias of `danger`. They are the
+     same red today, but one marks the passage of time and the other marks a
+     failure, and they have to be able to stop agreeing. */
+  --now: #ef4444;
+  --danger: #dc2626;
+  --danger-surface: #fef2f2;
+  --warn: #78350f;
+  --warn-surface: #fffbeb;
+  --ok: #064e3b;
+  --ok-surface: #ecfdf5;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface: #09090b;
+  --surface-sunken: #09090b;
+  --surface-raised: #18181b;
+  --line: #27272a;
+  --line-soft: #18181b;
+  --ink: #fafafa;
+  --ink-muted: #a1a1aa;
+  --ink-faint: #71717a;
+  --accent: #3b82f6;
+  --accent-ink: #ffffff;
+  --now: #f87171;
+  --danger: #f87171;
+  --danger-surface: #2a1214;
+  --warn: #fde68a;
+  --warn-surface: #27200a;
+  --ok: #a7f3d0;
+  --ok-surface: #052e23;
+}
+
+/* The mobile drawer arrives from the edge it lives on. Short enough to feel
+   like the panel was already there, long enough not to look like a jump cut. */
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--surface);
+  color: var(--ink);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 

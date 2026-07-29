@@ -69,7 +69,7 @@ function NestingBar({ editor }: { editor: BlockNoteEditor }) {
   };
 
   return (
-    <div className="sticky bottom-0 mt-auto flex justify-end gap-1 border-t border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="border-line bg-surface sticky bottom-0 mt-auto flex justify-end gap-1 border-t px-4 py-2">
       <NestingButton
         label="Outdent"
         onPress={hold(() => {
@@ -107,7 +107,7 @@ function NestingButton({
       // touch replays afterwards and would otherwise still steal focus.
       onPointerDown={onPress}
       onMouseDown={(event) => event.preventDefault()}
-      className="rounded-md p-2 text-zinc-600 active:bg-zinc-100 dark:text-zinc-300 dark:active:bg-zinc-800"
+      className="active:bg-surface-raised text-ink-muted rounded-md p-2"
     >
       <svg
         viewBox="0 0 20 20"
