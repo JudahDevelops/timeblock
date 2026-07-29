@@ -1,0 +1,88 @@
+import { TZDate } from "@date-fns/tz";
+
+import type { GoogleDateTime, GoogleEvent } from "@/lib/google/client";
+
+export type MappedEvent = {
+  gcalEventId: string;
+  /** Google reports a deletion as a `cancelled` row, not an absent one. */
+  cancelled: boolean;
+  title: string;
+  startsAt: Date;
+  endsAt: Date;
+  allDay: boolean;
+  tz: string;
+  recurringEventId: string | null;
+  originalStartTime: Date | null;
+  etag: string | null;
+  updated: Date | null;
+};
+
+/**
+ * Turns a Google event into the row shape this app stores.
+ *
+ * Returns null for anything unusable — a row with no id, or a live event with
+ * no start. Sync must survive one malformed event rather than abandoning the
+ * page it arrived in.
+ */
+export function mapGoogleEvent(event: GoogleEvent, calendarTz: string): MappedEvent | null {
+  if (!event.id) return null;
+
+  const cancelled = event.status === "cancelled";
+  const tz = event.start?.timeZone ?? calendarTz;
+
+  const start = toInstant(event.start, tz);
+  const end = toInstant(event.end, tz);
+
+  // A cancellation often carries nothing but an id and a status; it still has
+  // to be reported so the local row can be tombstoned.
+  if (!start || !end) {
+    if (!cancelled) return null;
+    return {
+      gcalEventId: event.id,
+      cancelled: true,
+      title: event.summary ?? "",
+      startsAt: new Date(0),
+      endsAt: new Date(0),
+      allDay: false,
+      tz,
+      recurringEventId: event.recurringEventId ?? null,
+      originalStartTime: toInstant(event.originalStartTime, tz),
+      etag: event.etag ?? null,
+      updated: event.updated ? new Date(event.updated) : null,
+    };
+  }
+
+  return {
+    gcalEventId: event.id,
+    cancelled,
+    title: event.summary ?? "",
+    startsAt: start,
+    endsAt: end,
+    allDay: Boolean(event.start?.date),
+    tz,
+    recurringEventId: event.recurringEventId ?? null,
+    originalStartTime: toInstant(event.originalStartTime, tz),
+    etag: event.etag ?? null,
+    updated: event.updated ? new Date(event.updated) : null,
+  };
+}
+
+/**
+ * Resolves either shape of Google's date field to an instant.
+ *
+ * An all-day event carries a bare `date`, which names a calendar day rather
+ * than a moment. Reading it as UTC would slide the block onto the wrong day for
+ * anyone not on UTC, so it is anchored to midnight in the event's own zone.
+ */
+function toInstant(value: GoogleDateTime | undefined, tz: string): Date | null {
+  if (!value) return null;
+  if (value.dateTime) {
+    const parsed = new Date(value.dateTime);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (value.date) {
+    const parsed = new TZDate(`${value.date}T00:00:00`, tz);
+    return Number.isNaN(parsed.getTime()) ? null : new Date(parsed.getTime());
+  }
+  return null;
+}

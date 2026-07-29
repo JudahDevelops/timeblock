@@ -6,8 +6,19 @@ import { publicEnv } from "@/env";
 /** Paths reachable while signed out. Everything else redirects to /login. */
 const PUBLIC_PREFIXES = ["/login", "/auth"];
 
+/**
+ * Routes that authenticate themselves, so the gate below must let them past.
+ *
+ * `/api/sync` is a Vercel Cron target: it arrives with a bearer token and no
+ * session at all, so gating it would 401 every scheduled run. Its GET checks
+ * the cron secret; its POST still calls `requireUserId()`.
+ */
+const SELF_AUTHENTICATED_PREFIXES = ["/api/sync"];
+
 function isPublic(pathname: string): boolean {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return [...PUBLIC_PREFIXES, ...SELF_AUTHENTICATED_PREFIXES].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 /**

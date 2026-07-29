@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Providers } from "@/app/providers";
@@ -22,7 +23,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="text-sm font-semibold tracking-tight">Timeblock</span>
             {/* Phase 1.1 fills this rail with the mini-month and search. */}
           </div>
-          <UserMenu email={user.email} />
+          <div className="space-y-3">
+            <Link
+              href="/settings/calendars"
+              className="block text-xs text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-900 hover:underline dark:hover:text-zinc-100"
+            >
+              Calendars
+            </Link>
+            <UserMenu email={user.email} />
+          </div>
         </aside>
 
         {/* `min-h-0` is load-bearing: without it a flex child refuses to shrink

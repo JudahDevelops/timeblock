@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "calendar_connections_account_calendar_idx" ON "calendar_connections" USING btree ("google_account_id","gcal_calendar_id");

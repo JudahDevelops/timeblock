@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -142,6 +143,12 @@ export const calendarConnections = pgTable(
   (t) => [
     index("calendar_connections_user_idx").on(t.userId),
     index("calendar_connections_channel_idx").on(t.channelId),
+    // Reconnecting the same Google account must update the one row that holds
+    // its sync cursor, not start a second that re-imports everything.
+    uniqueIndex("calendar_connections_account_calendar_idx").on(
+      t.googleAccountId,
+      t.gcalCalendarId,
+    ),
   ],
 );
 

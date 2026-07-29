@@ -9,12 +9,15 @@ import { useEffect } from "react";
  */
 export function BlockActions({
   title,
+  readOnly = false,
   onOpen,
   onRename,
   onDelete,
   onClose,
 }: {
   title: string;
+  /** A Google block. Its notes are ours to write; its name and slot are not. */
+  readOnly?: boolean;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -44,8 +47,12 @@ export function BlockActions({
           {title || "Untitled"}
         </div>
         <Action label="Open" onSelect={onOpen} />
-        <Action label="Rename" onSelect={onRename} />
-        <Action label="Delete" destructive onSelect={onDelete} />
+        {readOnly ? null : (
+          <>
+            <Action label="Rename" onSelect={onRename} />
+            <Action label="Delete" destructive onSelect={onDelete} />
+          </>
+        )}
       </div>
 
       <button

@@ -165,6 +165,28 @@ export function TimeGrid({
     return rows;
   }, [events, optimistic, draft]);
 
+  /**
+   * Google owns the shape of its own events. Every mutation path checks here
+   * rather than trusting a block to have hidden its own affordances.
+   */
+  const isReadOnly = useCallback(
+    (id: string) => merged.some((e) => e.id === id && e.origin === "google"),
+    [merged],
+  );
+
+  const timed = useMemo(() => merged.filter((e) => !e.allDay), [merged]);
+
+  // An all-day event has no slot on an hourly grid; drawn as a span it papers
+  // over the whole day. These ride in a sticky row above the grid instead.
+  const allDayByDay = useMemo(
+    () =>
+      days.map((day) =>
+        merged.filter((e) => e.allDay && spanForDay(e.startsAt, e.endsAt, day) !== null),
+      ),
+    [days, merged],
+  );
+  const hasAllDay = allDayByDay.some((row) => row.length > 0);
+
   const registerColumn = useCallback((dayIndex: number, el: HTMLDivElement | null) => {
     columnsRef.current[dayIndex] = el;
   }, []);
@@ -209,6 +231,7 @@ export function TimeGrid({
     async (id: string, raw: string) => {
       const title = raw.trim();
       setEditingId(null);
+      if (isReadOnly(id)) return;
 
       // An unnamed draft is not an event, so it never reaches the server — but
       // it also survives here. Blur happens whenever a handle is grabbed; only
@@ -243,7 +266,7 @@ export function TimeGrid({
       // No refresh: the optimistic row already matches what the server stored.
       await updateEventTitle({ id, title }).catch(() => router.refresh());
     },
-    [changeSelection, draft, router],
+    [changeSelection, draft, isReadOnly, router],
   );
 
   /**
@@ -253,7 +276,7 @@ export function TimeGrid({
   const applyTime = useCallback(
     (id: string, startsAt: Date, endsAt: Date) => {
       const existing = merged.find((e) => e.id === id);
-      if (!existing) return;
+      if (!existing || existing.origin === "google") return;
 
       setOptimistic((o) => ({ ...o, [id]: { ...existing, startsAt, endsAt } }));
       // No refresh on success: the optimistic row already matches what the
@@ -384,6 +407,13 @@ export function TimeGrid({
     [draft],
   );
 
+  const handleRename = useCallback(
+    (id: string) => {
+      if (!isReadOnly(id)) setEditingId(id);
+    },
+    [isReadOnly],
+  );
+
   // Keyboard acts on the selection rather than DOM focus, so a tap on mobile
   // and a click on desktop drive the same target. The drawer, when open, owns
   // the keyboard instead.
@@ -400,7 +430,7 @@ export function TimeGrid({
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
         if (draft && selected === draft.id) changeSelection(null);
-        else void removeEvent(selected);
+        else if (!isReadOnly(selected)) void removeEvent(selected);
       } else if (event.key === "Enter") {
         event.preventDefault();
         handleOpen(selected);
@@ -411,7 +441,7 @@ export function TimeGrid({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, openId, draft, changeSelection, handleOpen, removeEvent]);
+  }, [selectedId, editingId, openId, draft, changeSelection, handleOpen, isReadOnly, removeEvent]);
 
   const handleColumnPointerDown = useCallback(
     (dayIndex: number, event: React.PointerEvent) => {
@@ -525,9 +555,9 @@ export function TimeGrid({
   const handleDelete = useCallback(
     (id: string) => {
       if (draft && id === draft.id) changeSelection(null);
-      else void removeEvent(id);
+      else if (!isReadOnly(id)) void removeEvent(id);
     },
-    [changeSelection, draft, removeEvent],
+    [changeSelection, draft, isReadOnly, removeEvent],
   );
 
   const handleLongPress = useCallback(
@@ -557,6 +587,31 @@ export function TimeGrid({
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      {hasAllDay ? (
+        <div className="sticky top-0 z-20 flex border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="shrink-0" style={{ width: GUTTER_WIDTH }} />
+          <div className="flex flex-1">
+            {days.map((day, dayIndex) => (
+              <div
+                key={day.toISOString()}
+                className="flex min-w-0 flex-1 flex-col gap-1 border-r border-zinc-200 p-1 last:border-r-0 dark:border-zinc-800"
+              >
+                {allDayByDay[dayIndex].map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setOpenId(event.id)}
+                    className="truncate rounded bg-zinc-100 px-1.5 py-0.5 text-left text-[11px] font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
+                  >
+                    {event.title || "Untitled"}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex" style={{ height: DAY_HEIGHT }}>
         {/* Hour gutter */}
         <div className="relative shrink-0" style={{ width: GUTTER_WIDTH }}>
@@ -588,7 +643,7 @@ export function TimeGrid({
               key={day.toISOString()}
               day={day}
               dayIndex={dayIndex}
-              events={merged}
+              events={timed}
               draggingId={draggingId}
               preview={
                 previewRange && drag?.dayIndex === dayIndex
@@ -620,12 +675,13 @@ export function TimeGrid({
       {menuFor ? (
         <BlockActions
           title={merged.find((e) => e.id === menuFor)?.title ?? ""}
+          readOnly={isReadOnly(menuFor)}
           onOpen={() => {
             handleOpen(menuFor);
             setMenuFor(null);
           }}
           onRename={() => {
-            setEditingId(menuFor);
+            handleRename(menuFor);
             setMenuFor(null);
           }}
           onDelete={() => {
@@ -645,6 +701,7 @@ export function TimeGrid({
           title={openEvent.title}
           startsAt={openEvent.startsAt}
           endsAt={openEvent.endsAt}
+          readOnly={openEvent.origin === "google"}
           onClose={() => setOpenId(null)}
           onRename={(title) => void saveTitle(openEvent.id, title)}
           onReschedule={(startsAt, endsAt) => applyTime(openEvent.id, startsAt, endsAt)}
@@ -741,6 +798,7 @@ const DayColumn = memo(function DayColumn({
           isSelected={selectedId === item.id}
           isDraft={item.id === draftId}
           isCoarse={isCoarse}
+          readOnly={item.event.origin === "google"}
           onSelect={() => onSelect(item.id)}
           onStartEdit={() => onStartEdit(item.id)}
           onSaveTitle={(title) => onSaveTitle(item.id, title)}

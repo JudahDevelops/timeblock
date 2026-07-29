@@ -38,6 +38,7 @@ export function EventDrawer({
   title,
   startsAt,
   endsAt,
+  readOnly = false,
   onClose,
   onRename,
   onReschedule,
@@ -46,6 +47,11 @@ export function EventDrawer({
   title: string;
   startsAt: Date;
   endsAt: Date;
+  /**
+   * Imported from Google. Its title and slot belong to them; the document
+   * below is still ours, which is the entire point of the product.
+   */
+  readOnly?: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
@@ -92,6 +98,7 @@ export function EventDrawer({
           title={title}
           startsAt={startsAt}
           endsAt={endsAt}
+          readOnly={readOnly}
           onClose={onClose}
           onRename={onRename}
           onReschedule={onReschedule}
@@ -115,6 +122,7 @@ function Header({
   title,
   startsAt,
   endsAt,
+  readOnly,
   onClose,
   onRename,
   onReschedule,
@@ -122,6 +130,7 @@ function Header({
   title: string;
   startsAt: Date;
   endsAt: Date;
+  readOnly: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
   onReschedule: (startsAt: Date, endsAt: Date) => void;
@@ -152,6 +161,7 @@ function Header({
         <input
           defaultValue={title}
           placeholder="Untitled block"
+          readOnly={readOnly}
           // Keyed on the id upstream, so a fresh drawer always shows its own
           // title even though this input is uncontrolled.
           className="min-w-0 flex-1 bg-transparent text-lg font-semibold outline-none placeholder:text-zinc-400"
@@ -182,9 +192,26 @@ function Header({
 
       <div className="flex items-center gap-2 text-sm text-zinc-500">
         <span className="tabular-nums">{format(startsAt, "EEE d MMM")}</span>
-        <TimeInput value={startsAt} onChange={(v) => changeTime("start", v)} label="Start time" />
-        <span aria-hidden>–</span>
-        <TimeInput value={endsAt} onChange={(v) => changeTime("end", v)} label="End time" />
+        {readOnly ? (
+          <span className="tabular-nums">
+            {format(startsAt, "HH:mm")} – {format(endsAt, "HH:mm")}
+          </span>
+        ) : (
+          <>
+            <TimeInput
+              value={startsAt}
+              onChange={(v) => changeTime("start", v)}
+              label="Start time"
+            />
+            <span aria-hidden>–</span>
+            <TimeInput value={endsAt} onChange={(v) => changeTime("end", v)} label="End time" />
+          </>
+        )}
+        {readOnly ? (
+          <span className="ml-auto rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-900">
+            Google
+          </span>
+        ) : null}
       </div>
     </header>
   );
