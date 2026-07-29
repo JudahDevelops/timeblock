@@ -60,15 +60,19 @@ async function main() {
       // Built server-side through `format('%L', ...)`: the secret and the URL
       // are parameters right up to the point Postgres quotes them into the
       // command text, so neither can break out of the literal.
+      //
+      // The casts are not decoration. `format` takes `VARIADIC "any"`, which
+      // gives the planner nothing to infer a bare parameter's type from, and it
+      // gives up with `could not determine data type of parameter`.
       await sql`
         select cron.schedule(
           ${job.name},
           ${job.schedule},
           format(
             'select net.http_get(url := %L, headers := %L::jsonb, timeout_milliseconds := %s)',
-            ${appUrl + job.path},
-            ${JSON.stringify({ Authorization: `Bearer ${secret}` })},
-            ${TIMEOUT_MS}
+            ${appUrl + job.path}::text,
+            ${JSON.stringify({ Authorization: `Bearer ${secret}` })}::text,
+            ${TIMEOUT_MS}::int
           )
         )
       `;
