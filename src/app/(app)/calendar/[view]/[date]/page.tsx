@@ -1,8 +1,12 @@
+import { format, isToday } from "date-fns";
 import { notFound } from "next/navigation";
 
 import { CalendarToolbar } from "@/components/calendar/calendar-toolbar";
+import { TimeGrid } from "@/components/calendar/time-grid";
 import { fromDateParam, isCalendarView, visibleDays } from "@/lib/date";
-import { format, isToday } from "date-fns";
+import { getEventsInRange } from "@/server/queries/events";
+import { requireUserId } from "@/server/auth";
+import { cn } from "@/lib/utils";
 
 export default async function CalendarPage({
   params,
@@ -17,28 +21,32 @@ export default async function CalendarPage({
 
   const days = visibleDays(anchor, view);
 
+  const rangeStart = new Date(days[0]);
+  rangeStart.setHours(0, 0, 0, 0);
+  const rangeEnd = new Date(days[days.length - 1]);
+  rangeEnd.setHours(24, 0, 0, 0);
+
+  const userId = await requireUserId();
+  const events = await getEventsInRange(userId, rangeStart, rangeEnd);
+
   return (
     <>
       <CalendarToolbar view={view} anchor={anchor} />
 
-      {/* Phase 2 replaces this header strip with the scrolling hourly grid. */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-14 shrink-0 border-r border-zinc-200 dark:border-zinc-800" />
+      <div className="flex shrink-0 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="w-14 shrink-0" />
         <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
           {days.map((day) => (
-            <div
-              key={day.toISOString()}
-              className="border-r border-zinc-200 px-2 py-3 last:border-r-0 dark:border-zinc-800"
-            >
+            <div key={day.toISOString()} className="px-2 py-2">
               <div className="text-[11px] tracking-wide text-zinc-400 uppercase">
                 {format(day, "EEE")}
               </div>
               <div
-                className={
-                  isToday(day)
-                    ? "mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900 text-sm font-medium text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
-                    : "mt-0.5 flex h-7 w-7 items-center justify-center text-sm font-medium"
-                }
+                className={cn(
+                  "mt-0.5 flex h-7 w-7 items-center justify-center text-sm font-medium",
+                  isToday(day) &&
+                    "rounded-full bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900",
+                )}
               >
                 {format(day, "d")}
               </div>
@@ -46,6 +54,8 @@ export default async function CalendarPage({
           ))}
         </div>
       </div>
+
+      <TimeGrid days={days} events={events} />
     </>
   );
 }
