@@ -1,0 +1,76 @@
+# Timeblock
+
+A calendar where every block of time is a page you work inside.
+
+The calendar is the primary interface — a vertical hourly grid you time-block your
+day on. But every event opens into a full block editor: nested to-do lists,
+headings, rich text, checklists, standalone collapsible toggles, arbitrary
+nesting. The plan and the execution live in the same place.
+
+## Why this exists
+
+The market splits in two and the halves never meet. Tools with a real hourly
+time-grid (Notion Calendar, Sunsama, Akiflow, Motion, Morgen) give events a
+plain or lightly-rich notes field. Tools with a real block editor (Notion, Tana,
+Craft) have no hourly grid — Notion's own calendar view is still month/week
+boxes. Routine.co is the closest thing to this concept, but its collapsing is
+bound to headings: no standalone toggles, no arbitrary nesting.
+
+## Stack
+
+| Concern      | Choice                                                                 |
+| ------------ | ---------------------------------------------------------------------- |
+| Framework    | Next.js 16, App Router, React 19, TypeScript strict                    |
+| Editor       | BlockNote (pinned exact — 0.x semver)                                  |
+| Database     | Supabase Postgres + Drizzle ORM                                        |
+| Auth         | Supabase Auth (app identity) + own Google OAuth flow (calendar access) |
+| Sync         | Google Calendar API, two-way                                           |
+| Styling      | Tailwind v4                                                            |
+| Server state | TanStack Query · **Client state** Zustand                              |
+
+## Getting started
+
+```bash
+cp .env.example .env.local   # fill in Supabase + Google credentials
+npm install
+npm run db:push              # apply schema to your Supabase project
+npm run dev
+```
+
+### Required setup
+
+1. **Supabase project** — copy the URL, anon key, service role key, and the
+   session-pooler `DATABASE_URL`.
+2. **Google Cloud project** — enable the Calendar API, create an OAuth client
+   with redirect URI `${NEXT_PUBLIC_APP_URL}/api/google/oauth/callback`. Domain
+   verification is required before push notifications will work.
+3. **Secrets** — `openssl rand -base64 32` for `TOKEN_ENCRYPTION_KEY`,
+   `openssl rand -hex 32` for `CRON_SECRET`.
+
+## Scripts
+
+| Command                           | Does                                     |
+| --------------------------------- | ---------------------------------------- |
+| `npm run dev`                     | Dev server                               |
+| `npm run typecheck`               | `tsc --noEmit`                           |
+| `npm run lint` / `npm run format` | ESLint / Prettier                        |
+| `npm run db:generate`             | Emit a migration from `src/db/schema.ts` |
+| `npm run db:push`                 | Apply schema directly (dev)              |
+| `npm run db:studio`               | Drizzle Studio                           |
+
+## Architecture notes
+
+- **The block body is ours.** Google's `description` field is limited HTML and
+  would destroy nesting. Google receives a truncated stub plus a deep link;
+  the real document never leaves Postgres and is **never parsed back**.
+- **Two OAuth concerns, deliberately separate.** Supabase Auth handles app
+  identity. Calendar access uses our own OAuth flow, because Supabase returns
+  `provider_refresh_token` only once at sign-in and never persists it.
+- **A 410 from Google does not mean wipe local rows.** Full resync reconciles
+  through `event_links`, so block bodies survive.
+- **Watch channels expire (~7 days).** Renewed hourly by cron; read the
+  expiration Google returns rather than hardcoding it.
+
+## Status
+
+Phase 0 complete — scaffold, schema, tooling. See the phased plan for what lands next.
