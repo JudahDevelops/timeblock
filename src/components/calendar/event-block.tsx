@@ -70,6 +70,9 @@ export function EventBlock({
 
   const height = minutesToY(endMinutes - startMinutes);
   const grabZone = isCoarse ? TOUCH_HANDLE : HANDLE;
+  const range = formatRange(startMinutes, endMinutes);
+  /** Below two lines' worth of height the time has to share the title's row. */
+  const stacked = height > 34;
   /** Handles are only worth showing once a block is the active target. */
   const showHandles = isCoarse && (isSelected || isDraft) && height >= 32;
 
@@ -167,36 +170,43 @@ export function EventBlock({
         </>
       ) : null}
 
-      {isEditing ? (
-        <input
-          ref={inputRef}
-          autoFocus
-          defaultValue={title}
-          placeholder="Name this block"
-          className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-current/50"
-          onPointerDown={(event) => event.stopPropagation()}
-          onBlur={(event) => onSaveTitle(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              onSaveTitle(event.currentTarget.value);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              // An empty string discards a draft; an existing block keeps its name.
-              onSaveTitle(isDraft ? "" : title);
-            }
-            event.stopPropagation();
-          }}
-        />
-      ) : (
-        <div className="truncate text-xs leading-tight font-medium">{title || "Untitled"}</div>
-      )}
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            autoFocus
+            defaultValue={title}
+            placeholder="Name this block"
+            className="min-w-0 flex-1 bg-transparent text-xs font-medium outline-none placeholder:text-current/50"
+            onPointerDown={(event) => event.stopPropagation()}
+            onBlur={(event) => onSaveTitle(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onSaveTitle(event.currentTarget.value);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                // An empty string leaves a draft unnamed; an existing block
+                // keeps the name it already had.
+                onSaveTitle(isDraft ? "" : title);
+              }
+              event.stopPropagation();
+            }}
+          />
+        ) : (
+          <div className="min-w-0 flex-1 truncate text-xs leading-tight font-medium">
+            {title || "Untitled"}
+          </div>
+        )}
 
-      {height > 34 ? (
-        <div className="text-[10px] tabular-nums opacity-70">
-          {formatRange(startMinutes, endMinutes)}
-        </div>
-      ) : null}
+        {/* Too short to stack the time under the title, so it rides alongside
+            it instead of being clipped away entirely. */}
+        {stacked ? null : (
+          <span className="shrink-0 text-[10px] tabular-nums opacity-70">{range}</span>
+        )}
+      </div>
+
+      {stacked ? <div className="text-[10px] tabular-nums opacity-70">{range}</div> : null}
     </div>
   );
 }

@@ -156,6 +156,16 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
     setDrag(next);
   }, []);
 
+  /**
+   * The only way selection changes. An unnamed draft lives exactly as long as
+   * it stays selected — losing focus is not enough, or adjusting a block
+   * before naming it would destroy the block.
+   */
+  const changeSelection = useCallback((id: string | null) => {
+    setDraft((current) => (current && current.id !== id ? null : current));
+    setSelectedId(id);
+  }, []);
+
   const removeEvent = useCallback(
     async (id: string) => {
       setSelectedId((current) => (current === id ? null : current));
@@ -175,11 +185,12 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       const title = raw.trim();
       setEditingId(null);
 
-      // An unnamed draft is not an event. Dropping it here is what stops the
-      // grid filling with blank blocks.
+      // An unnamed draft is not an event, so it never reaches the server — but
+      // it also survives here. Blur happens whenever a handle is grabbed; only
+      // deselecting it means the user walked away.
       if (draft && id === draft.id) {
-        setDraft(null);
         if (!title) return;
+        setDraft(null);
 
         const { startsAt, endsAt } = draft;
         try {
@@ -194,7 +205,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
               ...o,
               [row.id]: { id: row.id, title, startsAt, endsAt, allDay: false, origin: "local" },
             }));
-            setSelectedId(row.id);
+            changeSelection(row.id);
           }
           router.refresh();
         } catch {
@@ -207,14 +218,14 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       // No refresh: the optimistic row already matches what the server stored.
       await updateEventTitle({ id, title }).catch(() => router.refresh());
     },
-    [draft, router],
+    [changeSelection, draft, router],
   );
 
   const commit = useCallback(
     (current: Drag) => {
       // A press that never travelled is a click, not a gesture.
       if (!current.moved) {
-        if (current.kind === "create") setSelectedId(null);
+        if (current.kind === "create") changeSelection(null);
         return;
       }
 
@@ -227,7 +238,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
         const id = `draft-${crypto.randomUUID()}`;
         setDraft({ id, startsAt, endsAt });
         setEditingId(id);
-        setSelectedId(id);
+        changeSelection(id);
         return;
       }
 
@@ -251,7 +262,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
         router.refresh();
       });
     },
-    [days, draft, merged, router],
+    [changeSelection, days, draft, merged, router],
   );
 
   // The drag continues on `window` so the pointer may leave the column
@@ -336,19 +347,19 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
 
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
-        if (draft && selectedId === draft.id) setDraft(null);
+        if (draft && selectedId === draft.id) changeSelection(null);
         else if (selectedId) void removeEvent(selectedId);
       } else if (event.key === "Enter") {
         event.preventDefault();
         setEditingId(selectedId);
       } else if (event.key === "Escape") {
-        setSelectedId(null);
+        changeSelection(null);
       }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, draft, removeEvent]);
+  }, [selectedId, editingId, draft, changeSelection, removeEvent]);
 
   const handleColumnPointerDown = useCallback(
     (dayIndex: number, event: React.PointerEvent) => {
@@ -392,31 +403,30 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       // it; touching the draft here would race that and lose the typed title.
       if (editingId) return;
 
-      // A tap on bare grid first clears whatever is active, and only creates
-      // once nothing is — so the second tap is never a surprise.
-      if (draft) {
-        setDraft(null);
-        setSelectedId(null);
-        return;
-      }
-      if (selectedId) {
-        setSelectedId(null);
+      // A tap on bare grid first clears whatever is active — dropping an
+      // unnamed draft with it — and only creates once nothing is.
+      if (draft || selectedId) {
+        changeSelection(null);
         return;
       }
 
-      const start = clampToDay(snapToStep(minutesFromEvent(dayIndex, event.clientY)));
-      const end = Math.min(start + TAP_CREATE_MINUTES, MINUTES_PER_DAY);
+      // Tap-create fills the hour the finger landed in, so a new block sits
+      // flush between two lines rather than a quarter-hour off them.
+      const start = Math.min(
+        Math.floor(minutesFromEvent(dayIndex, event.clientY) / 60) * 60,
+        MINUTES_PER_DAY - TAP_CREATE_MINUTES,
+      );
       const day = days[dayIndex];
       const id = `draft-${crypto.randomUUID()}`;
       setDraft({
         id,
-        startsAt: dayAtMinutes(day, Math.min(start, end - MIN_EVENT_MINUTES)),
-        endsAt: dayAtMinutes(day, end),
+        startsAt: dayAtMinutes(day, start),
+        endsAt: dayAtMinutes(day, start + TAP_CREATE_MINUTES),
       });
-      setSelectedId(id);
+      changeSelection(id);
       setEditingId(id);
     },
-    [days, draft, editingId, minutesFromEvent, selectedId],
+    [changeSelection, days, draft, editingId, minutesFromEvent, selectedId],
   );
 
   const handleColumnPointerCancel = useCallback(() => {
@@ -431,7 +441,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       event: React.PointerEvent,
     ) => {
       const minutes = minutesFromEvent(dayIndex, event.clientY);
-      setSelectedId(item.id);
+      changeSelection(item.id);
       const base = {
         dayIndex,
         currentMinutes: minutes,
@@ -457,29 +467,32 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
         });
       }
     },
-    [beginDrag, minutesFromEvent],
+    [beginDrag, changeSelection, minutesFromEvent],
   );
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (draft && id === draft.id) setDraft(null);
+      if (draft && id === draft.id) changeSelection(null);
       else void removeEvent(id);
     },
-    [draft, removeEvent],
+    [changeSelection, draft, removeEvent],
   );
 
-  const handleLongPress = useCallback((id: string) => {
-    // The press already began a drag; abandon it so the block does not follow
-    // the finger while the sheet is up.
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-    dragRef.current = null;
-    setDrag(null);
-    setSelectedId(id);
-    setMenuFor(id);
-  }, []);
+  const handleLongPress = useCallback(
+    (id: string) => {
+      // The press already began a drag; abandon it so the block does not follow
+      // the finger while the sheet is up.
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      dragRef.current = null;
+      setDrag(null);
+      changeSelection(id);
+      setMenuFor(id);
+    },
+    [changeSelection],
+  );
 
   // Only the column under the pointer gets a live preview; every other column
   // receives `null` and so is skipped by `memo` for the whole gesture.
@@ -539,7 +552,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
               onColumnTap={handleColumnTap}
               onColumnPointerCancel={handleColumnPointerCancel}
               onGrab={handleGrab}
-              onSelect={setSelectedId}
+              onSelect={changeSelection}
               onStartEdit={setEditingId}
               onSaveTitle={saveTitle}
               onLongPress={handleLongPress}
