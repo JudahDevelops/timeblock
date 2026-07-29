@@ -2,7 +2,7 @@
 
 import { format, isSameDay, isSameMonth } from "date-fns";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { spanForDay } from "@/lib/calendar/geometry";
 import { calendarPath, MONTH_ROWS, weekdayInitials } from "@/lib/date";
@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import type { CalendarEvent } from "@/server/queries/events";
 import { updateEventTime, updateEventTitle } from "@/server/actions/events";
 import { EventDrawer } from "../editor/event-drawer";
+import { useToast } from "../shell/toast";
+import { useEventOverlay } from "./use-event-overlay";
 
 /**
  * A month of whole days.
@@ -31,19 +33,43 @@ export function MonthGrid({
   openEventId: string | null;
 }) {
   const router = useRouter();
-  const [, startSaving] = useTransition();
   const [openId, setOpenId] = useState<string | null>(openEventId);
+  const toast = useToast();
+  const overlay = useEventOverlay(events);
 
   const weekdays = useMemo(() => weekdayInitials(), []);
 
   // An event is on a day if it overlaps it at all, so a block running past
   // midnight shows on both — the same rule the time grid draws by.
   const byDay = useMemo(
-    () => days.map((day) => events.filter((e) => spanForDay(e.startsAt, e.endsAt, day) !== null)),
-    [days, events],
+    () =>
+      days.map((day) =>
+        overlay.merged.filter((e) => spanForDay(e.startsAt, e.endsAt, day) !== null),
+      ),
+    [days, overlay.merged],
   );
 
-  const openEvent = events.find((e) => e.id === openId) ?? null;
+  const openEvent = overlay.merged.find((e) => e.id === openId) ?? null;
+
+  /**
+   * Applies a drawer edit, drawn before it is saved.
+   *
+   * The drawer's time inputs are controlled from these props, so awaiting the
+   * server here meant the field ignored keystrokes until it answered — the
+   * month view felt broken in a way the time grid never did, purely because
+   * that one had an overlay and this one did not.
+   */
+  const edit = useCallback(
+    (event: CalendarEvent, changes: Partial<CalendarEvent>, save: () => Promise<unknown>) => {
+      overlay.apply({ ...event, ...changes });
+      save().catch(() => {
+        overlay.revert(event.id);
+        router.refresh();
+        toast("Couldn't save that change.");
+      });
+    },
+    [overlay, router, toast],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -86,16 +112,12 @@ export function MonthGrid({
           recurring={openEvent.recurring}
           onClose={() => setOpenId(null)}
           onRename={(title) =>
-            startSaving(async () => {
-              await updateEventTitle({ id: openEvent.id, title });
-              router.refresh();
-            })
+            edit(openEvent, { title }, () => updateEventTitle({ id: openEvent.id, title }))
           }
           onReschedule={(startsAt, endsAt) =>
-            startSaving(async () => {
-              await updateEventTime({ id: openEvent.id, startsAt, endsAt });
-              router.refresh();
-            })
+            edit(openEvent, { startsAt, endsAt }, () =>
+              updateEventTime({ id: openEvent.id, startsAt, endsAt }),
+            )
           }
         />
       ) : null}

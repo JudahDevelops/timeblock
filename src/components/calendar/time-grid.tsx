@@ -29,7 +29,9 @@ import {
 } from "@/server/actions/events";
 
 import { EventDrawer } from "../editor/event-drawer";
+import { useToast } from "../shell/toast";
 import { BlockActions } from "./block-actions";
+import { useEventOverlay } from "./use-event-overlay";
 import { EventBlock } from "./event-block";
 import { NowIndicator } from "./now-indicator";
 
@@ -66,8 +68,14 @@ type Drag = DragBase &
     | { kind: "resize"; id: string; edge: "start" | "end"; fixedMinutes: number }
   );
 
-/** A block dragged out but not yet named. It exists only on the client. */
-type Draft = { id: string; startsAt: Date; endsAt: Date };
+/**
+ * A block dragged out but not yet named. It exists only on the client.
+ *
+ * `title` is set the moment one is typed, and stays for as long as the insert
+ * is in flight — otherwise naming a block would blank it again for the length
+ * of the round trip.
+ */
+type Draft = { id: string; startsAt: Date; endsAt: Date; title?: string };
 
 /** The [start, end] a drag currently implies, already snapped and clamped. */
 function dragRange(drag: Drag): { startMinutes: number; endMinutes: number } {
@@ -131,8 +139,9 @@ export function TimeGrid({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   /** Id of the block whose document is open in the drawer, if any. */
   const [openId, setOpenId] = useState<string | null>(openEventId);
-  /** Events awaiting a server round-trip, so the grid never appears to lag. */
-  const [optimistic, setOptimistic] = useState<Record<string, CalendarEvent>>({});
+
+  const toast = useToast();
+  const overlay = useEventOverlay(events);
 
   // Open on the working day rather than midnight — or, arriving from search, on
   // the block itself, so the grid behind the drawer shows where you landed.
@@ -149,22 +158,18 @@ export function TimeGrid({
   }, [openEventId, events]);
 
   const merged = useMemo(() => {
-    const rows = events
-      .map((e) => optimistic[e.id] ?? e)
-      .concat(Object.values(optimistic).filter((o) => !events.some((e) => e.id === o.id)));
-    if (draft) {
-      rows.push({
-        id: draft.id,
-        title: "",
-        startsAt: draft.startsAt,
-        endsAt: draft.endsAt,
-        allDay: false,
-        origin: "local",
-        recurring: false,
-      });
-    }
-    return rows;
-  }, [events, optimistic, draft]);
+    const rows = overlay.merged;
+    if (!draft) return rows;
+    return rows.concat({
+      id: draft.id,
+      title: draft.title ?? "",
+      startsAt: draft.startsAt,
+      endsAt: draft.endsAt,
+      allDay: false,
+      origin: "local",
+      recurring: false,
+    });
+  }, [overlay.merged, draft]);
 
   /**
    * Google owns the shape of its own events. Every mutation path checks here
@@ -215,17 +220,18 @@ export function TimeGrid({
   }, []);
 
   const removeEvent = useCallback(
-    async (id: string) => {
+    (id: string) => {
       setSelectedId((current) => (current === id ? null : current));
-      setOptimistic((o) => {
-        const next = { ...o };
-        delete next[id];
-        return next;
+      // Off the grid now, not when the tombstone lands. Awaiting the round trip
+      // left the block sitting there looking like the key press was missed.
+      overlay.hide(id);
+      deleteEvent(id).catch(() => {
+        overlay.unhide(id);
+        router.refresh();
+        toast("Couldn't delete that block.");
       });
-      await deleteEvent(id);
-      router.refresh();
     },
-    [router],
+    [overlay, router, toast],
   );
 
   const saveTitle = useCallback(
@@ -239,9 +245,12 @@ export function TimeGrid({
       // deselecting it means the user walked away.
       if (draft && id === draft.id) {
         if (!title) return;
-        setDraft(null);
-
+        // The draft is carried *through* the insert, now wearing its name.
+        // Clearing it first — as this used to — took the block off the grid for
+        // the whole round trip and put it back a moment later.
         const { startsAt, endsAt } = draft;
+        setDraft({ id, startsAt, endsAt, title });
+
         try {
           const row = await createEvent({
             title,
@@ -249,33 +258,41 @@ export function TimeGrid({
             endsAt,
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
           });
-          if (row) {
-            setOptimistic((o) => ({
-              ...o,
-              [row.id]: {
-                id: row.id,
-                title,
-                startsAt,
-                endsAt,
-                allDay: false,
-                origin: "local",
-                recurring: false,
-              },
-            }));
-            changeSelection(row.id);
-          }
-          router.refresh();
+          // Handing over in one tick: React batches both, so the draft is
+          // replaced by the real row in a single render and never blinks.
+          overlay.apply({
+            id: row.id,
+            title,
+            startsAt,
+            endsAt,
+            allDay: false,
+            origin: "local",
+            recurring: false,
+          });
+          setDraft(null);
+          changeSelection(row.id);
         } catch {
+          setDraft(null);
           router.refresh();
+          toast("Couldn't create that block.");
         }
         return;
       }
 
-      setOptimistic((o) => (o[id] ? { ...o, [id]: { ...o[id], title } } : o));
-      // No refresh: the optimistic row already matches what the server stored.
-      await updateEventTitle({ id, title }).catch(() => router.refresh());
+      // Unconditionally, unlike before: this used to write only when an entry
+      // already existed, so the first rename of a server-rendered block wrote
+      // nothing and the input unmounted back onto the old title.
+      const existing = merged.find((e) => e.id === id);
+      if (!existing || existing.title === title) return;
+
+      overlay.apply({ ...existing, title });
+      updateEventTitle({ id, title }).catch(() => {
+        overlay.revert(id);
+        router.refresh();
+        toast("Couldn't rename that block.");
+      });
     },
-    [changeSelection, draft, isReadOnly, router],
+    [changeSelection, draft, isReadOnly, merged, overlay, router, toast],
   );
 
   /**
@@ -287,19 +304,16 @@ export function TimeGrid({
       const existing = merged.find((e) => e.id === id);
       if (!existing || existing.origin === "google") return;
 
-      setOptimistic((o) => ({ ...o, [id]: { ...existing, startsAt, endsAt } }));
-      // No refresh on success: the optimistic row already matches what the
-      // server stored, and a round-trip here is what made dragging sluggish.
+      overlay.apply({ ...existing, startsAt, endsAt });
+      // No refresh on success: the overlay already matches what the server
+      // stored, and a round-trip here is what made dragging sluggish.
       updateEventTime({ id, startsAt, endsAt }).catch(() => {
-        setOptimistic((o) => {
-          const next = { ...o };
-          delete next[id];
-          return next;
-        });
+        overlay.revert(id);
         router.refresh();
+        toast("Couldn't move that block.");
       });
     },
-    [merged, router],
+    [merged, overlay, router, toast],
   );
 
   const commit = useCallback(
@@ -324,7 +338,7 @@ export function TimeGrid({
       }
 
       if (draft && current.id === draft.id) {
-        setDraft({ id: draft.id, startsAt, endsAt });
+        setDraft({ ...draft, startsAt, endsAt });
         return;
       }
 
@@ -439,7 +453,7 @@ export function TimeGrid({
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
         if (draft && selected === draft.id) changeSelection(null);
-        else if (!isReadOnly(selected)) void removeEvent(selected);
+        else if (!isReadOnly(selected)) removeEvent(selected);
       } else if (event.key === "Enter") {
         event.preventDefault();
         handleOpen(selected);

@@ -2,6 +2,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import { db } from "@/db";
 import { events } from "@/db/schema";
@@ -9,6 +10,20 @@ import { pushEventBestEffort } from "@/lib/sync/push";
 import { requireUserId } from "@/server/auth";
 
 const MAX_TITLE_LENGTH = 500;
+
+/**
+ * Sends a local write on to Google once the response is already on its way.
+ *
+ * The push is a token refresh plus a REST round-trip to another continent, and
+ * awaiting it inline put all of that between the user releasing a block and the
+ * action returning — for a result nothing renders, since failures are swallowed
+ * and swept up by `pushPending` within five minutes anyway. The database write
+ * is still awaited before this is scheduled, so the row a push reads is the one
+ * just committed.
+ */
+function push(userId: string, eventId: string) {
+  after(() => pushEventBestEffort(userId, eventId));
+}
 
 /**
  * Server Actions are a public HTTP surface, so inputs are validated here even
@@ -43,7 +58,7 @@ export async function createEvent(input: {
     })
     .returning({ id: events.id });
 
-  await pushEventBestEffort(userId, row.id);
+  push(userId, row.id);
   revalidatePath("/calendar", "page");
   return row;
 }
@@ -61,7 +76,7 @@ export async function updateEventTime(input: { id: string; startsAt: Date; endsA
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  await pushEventBestEffort(userId, input.id);
+  push(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
@@ -76,7 +91,7 @@ export async function updateEventTitle(input: { id: string; title: string }) {
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  await pushEventBestEffort(userId, input.id);
+  push(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
@@ -94,6 +109,6 @@ export async function deleteEvent(id: string) {
 
   // The tombstone is what the push reads to know this is a withdrawal, so it
   // has to be written first.
-  await pushEventBestEffort(userId, id);
+  push(userId, id);
   revalidatePath("/calendar", "page");
 }
