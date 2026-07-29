@@ -27,6 +27,7 @@ import {
   updateEventTitle,
 } from "@/server/actions/events";
 
+import { EventDrawer } from "../editor/event-drawer";
 import { BlockActions } from "./block-actions";
 import { EventBlock } from "./event-block";
 import { NowIndicator } from "./now-indicator";
@@ -115,6 +116,8 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** Id of the block whose quick-actions sheet is open, if any. */
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** Id of the block whose document is open in the drawer, if any. */
+  const [openId, setOpenId] = useState<string | null>(null);
   /** Events awaiting a server round-trip, so the grid never appears to lag. */
   const [optimistic, setOptimistic] = useState<Record<string, CalendarEvent>>({});
 
@@ -221,6 +224,30 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
     [changeSelection, draft, router],
   );
 
+  /**
+   * Moves a stored event, optimistically. Shared by the drag commit and the
+   * drawer's time pickers so both paths agree on rollback.
+   */
+  const applyTime = useCallback(
+    (id: string, startsAt: Date, endsAt: Date) => {
+      const existing = merged.find((e) => e.id === id);
+      if (!existing) return;
+
+      setOptimistic((o) => ({ ...o, [id]: { ...existing, startsAt, endsAt } }));
+      // No refresh on success: the optimistic row already matches what the
+      // server stored, and a round-trip here is what made dragging sluggish.
+      updateEventTime({ id, startsAt, endsAt }).catch(() => {
+        setOptimistic((o) => {
+          const next = { ...o };
+          delete next[id];
+          return next;
+        });
+        router.refresh();
+      });
+    },
+    [merged, router],
+  );
+
   const commit = useCallback(
     (current: Drag) => {
       // A press that never travelled is a click, not a gesture.
@@ -247,22 +274,9 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
         return;
       }
 
-      const existing = merged.find((e) => e.id === current.id);
-      if (!existing) return;
-
-      setOptimistic((o) => ({ ...o, [current.id]: { ...existing, startsAt, endsAt } }));
-      // No refresh: the optimistic row already matches what the server stored,
-      // and a round-trip here is what made dragging feel sluggish.
-      updateEventTime({ id: current.id, startsAt, endsAt }).catch(() => {
-        setOptimistic((o) => {
-          const next = { ...o };
-          delete next[current.id];
-          return next;
-        });
-        router.refresh();
-      });
+      applyTime(current.id, startsAt, endsAt);
     },
-    [changeSelection, days, draft, merged, router],
+    [applyTime, changeSelection, days, draft],
   );
 
   // The drag continues on `window` so the pointer may leave the column
@@ -336,10 +350,26 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
     };
   }, [isDragging, commit]);
 
+  /**
+   * Opens a block's document. A draft has no row to open yet, so it falls back
+   * to naming inline — which is what turns it into a real event.
+   */
+  const handleOpen = useCallback(
+    (id: string) => {
+      if (draft && id === draft.id) setEditingId(id);
+      else setOpenId(id);
+    },
+    [draft],
+  );
+
   // Keyboard acts on the selection rather than DOM focus, so a tap on mobile
-  // and a click on desktop drive the same target.
+  // and a click on desktop drive the same target. The drawer, when open, owns
+  // the keyboard instead.
   useEffect(() => {
-    if (!selectedId || editingId) return;
+    if (!selectedId || editingId || openId) return;
+    // Pinned for the closure: the effect only runs with a selection, but TS
+    // cannot see that through the listener.
+    const selected = selectedId;
 
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -347,11 +377,11 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
 
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
-        if (draft && selectedId === draft.id) changeSelection(null);
-        else if (selectedId) void removeEvent(selectedId);
+        if (draft && selected === draft.id) changeSelection(null);
+        else void removeEvent(selected);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        setEditingId(selectedId);
+        handleOpen(selected);
       } else if (event.key === "Escape") {
         changeSelection(null);
       }
@@ -359,7 +389,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, draft, changeSelection, removeEvent]);
+  }, [selectedId, editingId, openId, draft, changeSelection, handleOpen, removeEvent]);
 
   const handleColumnPointerDown = useCallback(
     (dayIndex: number, event: React.PointerEvent) => {
@@ -494,6 +524,10 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
     [changeSelection],
   );
 
+  // Deleted underneath the drawer, or navigated away from: either way there is
+  // nothing left to show, so the drawer unmounts on its own.
+  const openEvent = openId ? (merged.find((e) => e.id === openId) ?? null) : null;
+
   // Only the column under the pointer gets a live preview; every other column
   // receives `null` and so is skipped by `memo` for the whole gesture.
   const previewRange = drag && drag.moved ? dragRange(drag) : null;
@@ -553,7 +587,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
               onColumnPointerCancel={handleColumnPointerCancel}
               onGrab={handleGrab}
               onSelect={changeSelection}
-              onStartEdit={setEditingId}
+              onStartEdit={handleOpen}
               onSaveTitle={saveTitle}
               onLongPress={handleLongPress}
             />
@@ -564,6 +598,10 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       {menuFor ? (
         <BlockActions
           title={merged.find((e) => e.id === menuFor)?.title ?? ""}
+          onOpen={() => {
+            handleOpen(menuFor);
+            setMenuFor(null);
+          }}
           onRename={() => {
             setEditingId(menuFor);
             setMenuFor(null);
@@ -573,6 +611,21 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
             setMenuFor(null);
           }}
           onClose={() => setMenuFor(null)}
+        />
+      ) : null}
+
+      {openEvent ? (
+        // Keyed on the id: switching blocks must rebuild the editor rather than
+        // push new content into a live one.
+        <EventDrawer
+          key={openEvent.id}
+          eventId={openEvent.id}
+          title={openEvent.title}
+          startsAt={openEvent.startsAt}
+          endsAt={openEvent.endsAt}
+          onClose={() => setOpenId(null)}
+          onRename={(title) => void saveTitle(openEvent.id, title)}
+          onReschedule={(startsAt, endsAt) => applyTime(openEvent.id, startsAt, endsAt)}
         />
       ) : null}
     </div>

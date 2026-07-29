@@ -9,11 +9,13 @@ import { useEffect } from "react";
  */
 export function BlockActions({
   title,
+  onOpen,
   onRename,
   onDelete,
   onClose,
 }: {
   title: string;
+  onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -41,6 +43,7 @@ export function BlockActions({
         <div className="truncate px-4 py-3 text-xs font-medium text-zinc-500">
           {title || "Untitled"}
         </div>
+        <Action label="Open" onSelect={onOpen} />
         <Action label="Rename" onSelect={onRename} />
         <Action label="Delete" destructive onSelect={onDelete} />
       </div>

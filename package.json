@@ -22,7 +22,6 @@
     "@blocknote/core": "0.52.1",
     "@blocknote/mantine": "0.52.1",
     "@blocknote/react": "0.52.1",
-    "@blocknote/server-util": "0.52.1",
     "@date-fns/tz": "^1.5.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.111.0",

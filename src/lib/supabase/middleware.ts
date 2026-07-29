@@ -47,6 +47,12 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (!signedIn && !isPublic(pathname)) {
+    // An autosave has nowhere to put a login page. It needs a status it can
+    // branch on, not 302 followed by a body of HTML that fails to parse.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";

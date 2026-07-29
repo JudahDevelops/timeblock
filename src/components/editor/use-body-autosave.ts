@@ -1,0 +1,147 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import type { BlockDocument } from "@/lib/editor/document";
+import type { EventDocument } from "@/app/api/events/[id]/body/route";
+
+/** Quiet period after the last keystroke before a save goes out. */
+const DEBOUNCE_MS = 800;
+/** A steady typist never stops typing, so saves are forced at this interval. */
+const MAX_WAIT_MS = 5_000;
+
+export type SaveState = "idle" | "pending" | "saving" | "saved" | "conflict" | "error";
+
+/**
+ * Debounced persistence for one event's body.
+ *
+ * The editor is never a controlled component — BlockNote owns its own document
+ * and mirroring it into React state is the classic performance trap. This hook
+ * only receives change notifications and decides when to POST.
+ */
+export function useBodyAutosave({
+  eventId,
+  initialRev,
+  onConflict,
+}: {
+  eventId: string;
+  initialRev: number;
+  onConflict: (winning: EventDocument) => void;
+}) {
+  const [state, setState] = useState<SaveState>("idle");
+
+  const revRef = useRef(initialRev);
+  const pendingRef = useRef<BlockDocument | null>(null);
+  const debounceRef = useRef<number | null>(null);
+  const maxWaitRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
+
+  const clearTimers = useCallback(() => {
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    if (maxWaitRef.current !== null) window.clearTimeout(maxWaitRef.current);
+    debounceRef.current = null;
+    maxWaitRef.current = null;
+  }, []);
+
+  const flush = useCallback(async () => {
+    // A save is already running. It drains `pendingRef` in a loop, so whatever
+    // arrived meanwhile goes out on its next pass rather than racing this one.
+    if (inFlightRef.current) return;
+    clearTimers();
+    if (pendingRef.current === null) return;
+
+    inFlightRef.current = true;
+    try {
+      while (pendingRef.current !== null) {
+        const body = pendingRef.current;
+        pendingRef.current = null;
+        setState("saving");
+
+        const response = await fetch(`/api/events/${eventId}/body`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, baseRev: revRef.current }),
+        });
+
+        if (response.status === 409) {
+          const { current } = (await response.json()) as { current: EventDocument };
+          setState("conflict");
+          onConflict(current);
+          return;
+        }
+
+        if (!response.ok) {
+          // Put the work back so the next change — or the next flush — retries
+          // it instead of silently dropping the edit.
+          pendingRef.current = body;
+          setState("error");
+          return;
+        }
+
+        const { bodyRev } = (await response.json()) as { bodyRev: number };
+        revRef.current = bodyRev;
+      }
+      setState("saved");
+    } catch {
+      setState("error");
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [clearTimers, eventId, onConflict]);
+
+  const scheduleSave = useCallback(
+    (body: BlockDocument) => {
+      pendingRef.current = body;
+      setState("pending");
+
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        void flush();
+      }, DEBOUNCE_MS);
+
+      // Set once and left alone until a save runs, so the ceiling is measured
+      // from the first unsaved keystroke rather than the most recent one.
+      maxWaitRef.current ??= window.setTimeout(() => {
+        maxWaitRef.current = null;
+        void flush();
+      }, MAX_WAIT_MS);
+    },
+    [flush],
+  );
+
+  /**
+   * Last-gasp save for a page that is going away. `fetch` would be cancelled
+   * mid-unload; a beacon is queued by the browser and survives it. No response
+   * comes back, so a conflict here is lost — acceptable, since the alternative
+   * is losing the edit outright.
+   */
+  const beacon = useCallback(() => {
+    const body = pendingRef.current;
+    if (body === null) return;
+    pendingRef.current = null;
+    navigator.sendBeacon(
+      `/api/events/${eventId}/body`,
+      new Blob([JSON.stringify({ body, baseRev: revRef.current })], { type: "application/json" }),
+    );
+  }, [eventId]);
+
+  useEffect(() => {
+    function onHidden() {
+      // Backgrounding a tab on mobile is often the last event before the OS
+      // kills it, so this is the only reliable place to persist.
+      if (document.visibilityState === "hidden") beacon();
+    }
+    document.addEventListener("visibilitychange", onHidden);
+    return () => document.removeEventListener("visibilitychange", onHidden);
+  }, [beacon]);
+
+  useEffect(() => {
+    return () => {
+      clearTimers();
+      beacon();
+    };
+  }, [beacon, clearTimers]);
+
+  return { state, scheduleSave, flush };
+}
