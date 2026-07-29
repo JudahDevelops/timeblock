@@ -107,6 +107,23 @@ body {
   overflow: hidden;
 }
 
+/* The calendar is a drag surface before it is a document.
+   Dragging out a block sweeps the pointer across hour labels, day names and
+   every block it passes, and the browser reads that as a text selection —
+   so a new block arrives with half the page highlighted behind it. */
+body {
+  user-select: none;
+}
+
+/* Except where there really is text to take. Applied directly, so it beats the
+   inherited `none` above no matter how deeply nested the field is. */
+input,
+textarea,
+[contenteditable],
+.bn-root {
+  user-select: text;
+}
+
 /* BlockNote paints its own rounded, near-black canvas, which reads as a card
    floating inside the drawer rather than the drawer's own document.
    Overriding `--bn-colors-editor-background` does not work: BlockNote's stylesheet

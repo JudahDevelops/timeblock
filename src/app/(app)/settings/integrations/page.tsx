@@ -24,7 +24,9 @@ export default async function IntegrationsPage({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-10">
+      {/* Prose, not a drag surface — account emails and error text are worth
+          being able to copy, so this opts back out of the global lock. */}
+      <div className="mx-auto max-w-2xl px-6 py-10 select-text">
         <Link
           href={calendarPath("week", new Date())}
           className="text-ink-muted text-sm underline-offset-4 hover:underline"
