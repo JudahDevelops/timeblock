@@ -151,14 +151,20 @@ export function EventBlock({
           };
         }
 
-        onSelect();
+        // A finger landing on a block has not chosen it yet — it may be on its
+        // way across the grid to the next week. Touch selection waits for the
+        // lift, so brushing past a block no longer lights it up. A cursor has
+        // no such ambiguity: a press is a press.
+        if (touch) {
+          // First tap selects and nothing more; the second gesture moves it.
+          // Dragging straight away would fight the grid's scroll.
+          if (!isSelected) return;
+        } else {
+          onSelect();
+        }
 
         // Nothing about a Google block is ours to move or resize.
         if (readOnly) return;
-
-        // First tap selects and nothing more; the second gesture moves it.
-        // Dragging straight away would fight the grid's scroll.
-        if (touch && !isSelected) return;
 
         const rect = event.currentTarget.getBoundingClientRect();
         const offsetY = event.clientY - rect.top;
@@ -173,7 +179,13 @@ export function EventBlock({
           cancelHold();
         }
       }}
-      onPointerUp={cancelHold}
+      onPointerUp={() => {
+        // A hold still pending is a press that neither travelled past the slop
+        // nor lasted long enough to raise the sheet — which is exactly a tap.
+        const tapped = holdRef.current !== null;
+        cancelHold();
+        if (tapped && !isSelected) onSelect();
+      }}
       onPointerCancel={cancelHold}
       onDoubleClick={(event) => {
         event.stopPropagation();
