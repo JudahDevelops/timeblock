@@ -100,4 +100,30 @@ describe("mapGoogleEvent", () => {
     );
     expect(mapped!.title).toBe("");
   });
+
+  it("carries our own id back off an event we pushed", () => {
+    const mapped = mapGoogleEvent(
+      {
+        id: "p1",
+        start: { dateTime: "2026-07-29T09:00:00Z" },
+        end: { dateTime: "2026-07-29T10:00:00Z" },
+        extendedProperties: { private: { tb_event_id: "0d4c1e2f-aaaa-bbbb-cccc-000000000001" } },
+      },
+      "UTC",
+    );
+    expect(mapped!.tbEventId).toBe("0d4c1e2f-aaaa-bbbb-cccc-000000000001");
+    expect(mapGoogleEvent({ id: "p2", status: "cancelled" }, "UTC")!.tbEventId).toBeNull();
+  });
+
+  it("keeps our id on a cancellation, which is how a move stays traceable", () => {
+    const mapped = mapGoogleEvent(
+      {
+        id: "p3",
+        status: "cancelled",
+        extendedProperties: { private: { tb_event_id: "0d4c1e2f-aaaa-bbbb-cccc-000000000002" } },
+      },
+      "UTC",
+    );
+    expect(mapped!.tbEventId).toBe("0d4c1e2f-aaaa-bbbb-cccc-000000000002");
+  });
 });

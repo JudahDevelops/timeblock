@@ -1,9 +1,16 @@
 import { TZDate } from "@date-fns/tz";
 
 import type { GoogleDateTime, GoogleEvent } from "@/lib/google/client";
+import { TB_EVENT_ID } from "@/lib/sync/payload";
 
 export type MappedEvent = {
   gcalEventId: string;
+  /**
+   * Our own event id, if this is a block we pushed. Survives being dragged
+   * between calendars in Google, so it is the one identifier that can match an
+   * event back to its body when `event_links` cannot.
+   */
+  tbEventId: string | null;
   /** Google reports a deletion as a `cancelled` row, not an absent one. */
   cancelled: boolean;
   title: string;
@@ -29,6 +36,7 @@ export function mapGoogleEvent(event: GoogleEvent, calendarTz: string): MappedEv
 
   const cancelled = event.status === "cancelled";
   const tz = event.start?.timeZone ?? calendarTz;
+  const tbEventId = event.extendedProperties?.private?.[TB_EVENT_ID] ?? null;
 
   const start = toInstant(event.start, tz);
   const end = toInstant(event.end, tz);
@@ -39,6 +47,7 @@ export function mapGoogleEvent(event: GoogleEvent, calendarTz: string): MappedEv
     if (!cancelled) return null;
     return {
       gcalEventId: event.id,
+      tbEventId,
       cancelled: true,
       title: event.summary ?? "",
       startsAt: new Date(0),
@@ -54,6 +63,7 @@ export function mapGoogleEvent(event: GoogleEvent, calendarTz: string): MappedEv
 
   return {
     gcalEventId: event.id,
+    tbEventId,
     cancelled,
     title: event.summary ?? "",
     startsAt: start,

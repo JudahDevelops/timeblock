@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
 import { GoogleRevokedError } from "@/lib/google/auth";
-import { syncConnection, type SyncOutcome } from "@/lib/sync/engine";
+import { purgeTombstones, syncConnection, type SyncOutcome } from "@/lib/sync/engine";
 import { runPendingJobs } from "@/lib/sync/jobs";
 import { pushPending, type PushResult } from "@/lib/sync/push";
 import { isCronRequest, requireUserId } from "@/server/auth";
@@ -35,8 +35,14 @@ export async function GET(request: Request) {
 
   const results: Record<string, RunResult | { error: string }> = {};
 
+  // Old deletions, swept here rather than inside the sync: it is per user, not
+  // per calendar, and a run that failed to reach Google is no reason to leave
+  // month-old tombstones lying around.
+  let purged = 0;
+
   for (const connection of connections) {
     try {
+      purged += await purgeTombstones(connection.userId);
       results[connection.id] = await runBoth(connection.id, connection.userId);
     } catch (cause) {
       // One dead connection must not stop the others. A revoked grant is
@@ -50,15 +56,18 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ran: connections.length, drained, results });
+  return NextResponse.json({ ran: connections.length, drained, purged, results });
 }
 
 /**
  * Push first, then pull.
  *
  * Order matters: a local edit that reached Google before the pull comes back
- * marked with our id and is skipped as an echo. The other way round, the pull
- * would report the pre-push state and briefly contradict what is on screen.
+ * carrying the etag the push recorded, so the pull recognises it as our own
+ * write and does nothing. The other way round, the pull would report the
+ * pre-push state, briefly contradict what is on screen, and — now that the pull
+ * resolves conflicts rather than skipping our events — could decide against an
+ * edit that was only seconds from being sent.
  */
 async function runBoth(connectionId: string, userId: string): Promise<RunResult> {
   const pushed = await pushPending(userId);

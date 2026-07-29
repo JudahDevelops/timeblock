@@ -172,8 +172,9 @@ async function writableConnection(userId: string): Promise<Writable | null> {
  *
  * The inline attempt is best-effort by design — a Google outage must never cost
  * the user an edit they already made — so something has to close the loop. A
- * row qualifies when it has no link at all, or when it changed after the last
- * time we pushed it.
+ * row qualifies when it has no link at all, when it changed after the last time
+ * we pushed it, or when the inbound sync cleared `last_pushed_at` to say our
+ * version won a conflict and has to go out again.
  */
 export async function pushPending(userId: string, limit = 50): Promise<Record<PushResult, number>> {
   const pending = await db
@@ -186,6 +187,7 @@ export async function pushPending(userId: string, limit = 50): Promise<Record<Pu
         eq(events.origin, "local"),
         or(
           isNull(eventLinks.gcalEventId),
+          isNull(eventLinks.lastPushedAt),
           lt(eventLinks.lastPushedAt, events.updatedAt),
           // A local deletion still has to reach Google, and its link is still
           // live until the delete succeeds.

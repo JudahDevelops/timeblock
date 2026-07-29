@@ -1,9 +1,15 @@
 import "server-only";
 
-import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { calendarConnections, eventLinks, events } from "@/db/schema";
+import {
+  calendarConnections,
+  eventLinks,
+  events,
+  syncConflicts,
+  type EventLink,
+} from "@/db/schema";
 import { getAccessToken } from "@/lib/google/auth";
 import {
   fullSyncParams,
@@ -12,9 +18,9 @@ import {
   incrementalParams,
   listEvents,
   syncWindow,
-  type GoogleEvent,
   type SyncWindow,
 } from "@/lib/google/client";
+import { conflictFields, reconcile } from "@/lib/sync/reconcile";
 import { mapGoogleEvent, type MappedEvent } from "./map";
 
 /**
@@ -29,10 +35,30 @@ export type SyncOutcome = {
   mode: SyncMode;
   imported: number;
   cancelled: number;
+  /** Rows Google described that were unusable — no id, or no start. */
   skipped: number;
+  /** Our own writes arriving back unchanged. Recognised and ignored. */
+  echoed: number;
+  /** Remote changes a newer local edit outranked. Queued to push again. */
+  kept: number;
+  /** Resolutions where both sides had moved. One row each in `sync_conflicts`. */
+  conflicts: number;
+  /** Cancellations that were a calendar move, not a deletion. */
+  moved: number;
   /** Rows the window no longer covers. See `pruneOutsideWindow`. */
   pruned: number;
   syncToken: string | null;
+};
+
+type PageOutcome = Omit<SyncOutcome, "mode" | "skipped" | "pruned" | "syncToken">;
+
+const NOTHING: PageOutcome = {
+  imported: 0,
+  cancelled: 0,
+  echoed: 0,
+  kept: 0,
+  conflicts: 0,
+  moved: 0,
 };
 
 type Connection = typeof calendarConnections.$inferSelect;
@@ -90,14 +116,7 @@ async function runSync(connection: Connection, mode: SyncMode): Promise<SyncOutc
   const params =
     mode === "full" ? fullSyncParams(window) : incrementalParams(connection.syncToken as string);
 
-  const outcome: SyncOutcome = {
-    mode,
-    imported: 0,
-    cancelled: 0,
-    skipped: 0,
-    pruned: 0,
-    syncToken: null,
-  };
+  const outcome: SyncOutcome = { mode, ...NOTHING, skipped: 0, pruned: 0, syncToken: null };
 
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -109,9 +128,7 @@ async function runSync(connection: Connection, mode: SyncMode): Promise<SyncOutc
     const batch = new Map<string, MappedEvent>();
     for (const item of result.items ?? []) {
       const mapped = mapGoogleEvent(item, calendarTz);
-      if (!mapped || isOurOwnEvent(item)) {
-        // Unusable, or written by us and echoed straight back. Phase 7
-        // reconciles ours; importing one now would fork it into a second row.
+      if (!mapped) {
         outcome.skipped++;
         continue;
       }
@@ -119,8 +136,9 @@ async function runSync(connection: Connection, mode: SyncMode): Promise<SyncOutc
     }
 
     const applied = await applyPage(connection, [...batch.values()]);
-    outcome.imported += applied.imported;
-    outcome.cancelled += applied.cancelled;
+    for (const key of Object.keys(NOTHING) as (keyof PageOutcome)[]) {
+      outcome[key] += applied[key];
+    }
 
     // The token only arrives on the final page; earlier pages carry a pageToken.
     if (result.nextSyncToken) outcome.syncToken = result.nextSyncToken;
@@ -149,11 +167,6 @@ async function runSync(connection: Connection, mode: SyncMode): Promise<SyncOutc
     .where(eq(calendarConnections.id, connection.id));
 
   return outcome;
-}
-
-/** Events we pushed to Google carry our id, and must never be re-imported. */
-function isOurOwnEvent(event: GoogleEvent): boolean {
-  return Boolean(event.extendedProperties?.private?.tb_event_id);
 }
 
 /**
@@ -200,6 +213,45 @@ async function pruneOutsideWindow(
 }
 
 /**
+ * How long a deleted block stays recoverable.
+ *
+ * Long enough that a full resync — the thing that would otherwise resurrect a
+ * deletion Google has already forgotten — cannot possibly still be carrying
+ * the old copy.
+ */
+const TOMBSTONE_DAYS = 30;
+
+/**
+ * Removes deletions that are old enough to be settled.
+ *
+ * The tombstone is the whole reason a deletion is safe: a 410 full resync sees
+ * the row, matches it through `event_links`, and leaves it deleted instead of
+ * importing it fresh. Once nothing can plausibly still be describing that
+ * event, the row is only clutter — and `event_links` cascades away with it.
+ *
+ * It will not touch a row with a body. A block someone wrote in and then
+ * deleted a month ago is still the only copy of that writing, and a tidy table
+ * is not worth it.
+ */
+export async function purgeTombstones(userId: string, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - TOMBSTONE_DAYS * 86_400_000);
+
+  const purged = await db
+    .delete(events)
+    .where(
+      and(
+        eq(events.userId, userId),
+        eq(events.bodyRev, 0),
+        isNotNull(events.deletedAt),
+        lt(events.deletedAt, cutoff),
+      ),
+    )
+    .returning({ id: events.id });
+
+  return purged.length;
+}
+
+/**
  * Writes one page of mapped events.
  *
  * Per page, not per event, and that is the whole design. Supabase sits ~270ms
@@ -207,36 +259,144 @@ async function pruneOutsideWindow(
  * two and a half minutes on a 322-event calendar. This is four round trips for
  * the entire page regardless of its size.
  *
- * `event_links` is the only thing consulted to decide create-vs-update — never
- * a title or time match. That link is also what protects block bodies: the
- * upsert below lists the columns Google owns and no others, so `body`,
- * `body_text` and `body_rev` survive every resync untouched.
+ * Identity is decided by `event_links` first, then by our own id riding in the
+ * event's extended properties — never by a title or time match. The link is
+ * also what protects block bodies: the upsert below lists the columns Google
+ * owns and no others, so `body`, `body_text` and `body_rev` survive every
+ * resync untouched.
  */
-async function applyPage(
-  connection: Connection,
-  mapped: MappedEvent[],
-): Promise<{ imported: number; cancelled: number }> {
-  if (mapped.length === 0) return { imported: 0, cancelled: 0 };
+async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise<PageOutcome> {
+  if (mapped.length === 0) return { ...NOTHING };
 
+  // Deliberately not filtered to this calendar. A link to the same Google id
+  // under a *different* calendar is the signature of a move, which Google
+  // reports as two unrelated facts — cancelled over here, created over there —
+  // and never as a move.
   const links = await db
-    .select({ gcalEventId: eventLinks.gcalEventId, localEventId: eventLinks.localEventId })
+    .select()
     .from(eventLinks)
     .where(
-      and(
-        eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
-        inArray(
-          eventLinks.gcalEventId,
-          mapped.map((m) => m.gcalEventId),
-        ),
+      inArray(
+        eventLinks.gcalEventId,
+        mapped.map((m) => m.gcalEventId),
       ),
     );
-  const known = new Map(links.map((l) => [l.gcalEventId, l.localEventId]));
+
+  const here = new Map<string, EventLink>();
+  const elsewhere = new Map<string, EventLink>();
+  for (const link of links) {
+    if (link.gcalCalendarId === connection.gcalCalendarId) {
+      here.set(link.gcalEventId, link);
+      continue;
+    }
+    // A live link outranks a retired one: if the event has bounced between
+    // calendars, only the calendar still holding it settles the question.
+    const held = elsewhere.get(link.gcalEventId);
+    if (!held || (held.deletedAt && !link.deletedAt)) elsewhere.set(link.gcalEventId, link);
+  }
+
+  /**
+   * The local row this Google event belongs to, if any.
+   *
+   * The last fallback matters more than it looks: a push that inserted into
+   * Google and then died before writing the link leaves an event that only
+   * `tb_event_id` can identify. Without it the next sync imports a second copy
+   * of a block that already exists, with an empty body.
+   */
+  const localIdFor = (m: MappedEvent): string | null =>
+    here.get(m.gcalEventId)?.localEventId ??
+    elsewhere.get(m.gcalEventId)?.localEventId ??
+    m.tbEventId;
+
+  const candidates = [...new Set(mapped.map(localIdFor).filter((id): id is string => id !== null))];
+  const localRows = candidates.length
+    ? await db
+        .select({
+          id: events.id,
+          origin: events.origin,
+          title: events.title,
+          startsAt: events.startsAt,
+          endsAt: events.endsAt,
+          updatedAt: events.updatedAt,
+          deletedAt: events.deletedAt,
+        })
+        .from(events)
+        // Scoped by user, so an id lifted from a foreign calendar's extended
+        // properties can never reach somebody else's block.
+        .where(and(eq(events.userId, connection.userId), inArray(events.id, candidates)))
+    : [];
+  const locals = new Map(localRows.map((row) => [row.id, row]));
 
   const now = new Date();
-  const live = mapped.filter((m) => !m.cancelled);
-  // A cancellation for something we never imported is not a deletion, it is
-  // noise — Google reports them for the whole window on a full sync.
-  const dead = mapped.filter((m) => m.cancelled && known.has(m.gcalEventId));
+  const outcome: PageOutcome = { ...NOTHING };
+
+  const write: Array<{ m: MappedEvent; id: string }> = [];
+  const relink: MappedEvent[] = [];
+  const dead: Array<{ m: MappedEvent; id: string }> = [];
+  const movedOut: MappedEvent[] = [];
+  const conflicts: (typeof syncConflicts.$inferInsert)[] = [];
+
+  for (const m of mapped) {
+    const id = localIdFor(m);
+    const local = id ? (locals.get(id) ?? null) : null;
+
+    if (m.cancelled) {
+      // A cancellation for something we never imported is not a deletion, it
+      // is noise — Google reports them for the whole window on a full sync.
+      //
+      // Nor is one for a row already tombstoned. Re-stamping `deleted_at` on
+      // every full sync would keep pushing the tombstone's own clock forward,
+      // and it would never reach the age at which `purgeTombstones` clears it.
+      if (!id || !local || local.deletedAt) continue;
+      const other = elsewhere.get(m.gcalEventId);
+      if (other && !other.deletedAt) {
+        // Still live in another calendar we sync. The user moved it; the block
+        // and its body belong to that calendar now, so only the link retires.
+        movedOut.push(m);
+        outcome.moved++;
+        continue;
+      }
+      dead.push({ m, id });
+      outcome.cancelled++;
+      continue;
+    }
+
+    const remote = {
+      etag: m.etag,
+      updated: m.updated,
+      title: m.title,
+      startsAt: m.startsAt,
+      endsAt: m.endsAt,
+    };
+    const { verdict, conflicted } = reconcile(here.get(m.gcalEventId) ?? null, local, remote);
+
+    if (conflicted && local) {
+      for (const field of conflictFields(local, remote)) {
+        conflicts.push({
+          userId: connection.userId,
+          localEventId: local.id,
+          resolvedAs: verdict === "apply" ? "remote" : "local",
+          at: now,
+          ...field,
+        });
+      }
+    }
+
+    if (verdict === "echo") {
+      outcome.echoed++;
+      continue;
+    }
+    if (verdict === "keep") {
+      relink.push(m);
+      outcome.kept++;
+      continue;
+    }
+
+    write.push({ m, id: id ?? crypto.randomUUID() });
+    outcome.imported++;
+  }
+
+  const live = write.map((w) => w.m);
 
   // One transaction per page. An event row without its link is invisible to
   // every future sync — nothing can ever match it again, so the next run
@@ -247,10 +407,13 @@ async function applyPage(
       // Ids are minted here rather than read back from `RETURNING`, which is
       // what lets the events and their links go out as two statements instead
       // of one per row.
-      const rows = live.map((m) => ({
-        id: known.get(m.gcalEventId) ?? crypto.randomUUID(),
+      const rows = write.map(({ m, id }) => ({
+        id,
         userId: connection.userId,
-        origin: "google" as const,
+        // Only ever consulted on insert — the upsert below leaves `origin`
+        // alone — but getting it wrong on a block whose link was lost would
+        // mark it Google's and stop it ever being pushed again.
+        origin: m.tbEventId ? ("local" as const) : ("google" as const),
         title: m.title,
         startsAt: m.startsAt,
         endsAt: m.endsAt,
@@ -306,6 +469,38 @@ async function applyPage(
         });
     }
 
+    if (relink.length > 0) {
+      // Ours won, so the row itself is untouched — but the link has to record
+      // what Google is currently holding, or the next run reads the same
+      // change as new and re-decides it forever. Clearing `last_pushed_at` is
+      // what actually resolves the disagreement: it is the flag `pushPending`
+      // reads, and without it our version would sit here being right and never
+      // reach Google.
+      await tx
+        .insert(eventLinks)
+        .values(
+          relink.map((m) => ({
+            gcalCalendarId: connection.gcalCalendarId,
+            gcalEventId: m.gcalEventId,
+            localEventId: locals.get(localIdFor(m)!)!.id,
+            gcalEtag: m.etag,
+            gcalUpdated: m.updated,
+            lastPulledAt: now,
+            lastPushedAt: null,
+            deletedAt: null,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [eventLinks.gcalCalendarId, eventLinks.gcalEventId],
+          set: {
+            gcalEtag: sql`excluded.gcal_etag`,
+            gcalUpdated: sql`excluded.gcal_updated`,
+            lastPulledAt: sql`excluded.last_pulled_at`,
+            lastPushedAt: sql`null`,
+          },
+        });
+    }
+
     if (dead.length > 0) {
       await tx
         .update(events)
@@ -313,7 +508,7 @@ async function applyPage(
         .where(
           inArray(
             events.id,
-            dead.map((m) => known.get(m.gcalEventId)!),
+            dead.map(({ id }) => id),
           ),
         );
       await tx
@@ -324,12 +519,34 @@ async function applyPage(
             eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
             inArray(
               eventLinks.gcalEventId,
-              dead.map((m) => m.gcalEventId),
+              dead.map(({ m }) => m.gcalEventId),
             ),
           ),
         );
     }
+
+    if (movedOut.length > 0) {
+      // The event row is pointedly left alone. This calendar has stopped
+      // carrying it, which is not the same as the user having thrown it away.
+      await tx
+        .update(eventLinks)
+        .set({ deletedAt: now, lastPulledAt: now })
+        .where(
+          and(
+            eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
+            inArray(
+              eventLinks.gcalEventId,
+              movedOut.map((m) => m.gcalEventId),
+            ),
+          ),
+        );
+    }
+
+    // Last, and inside the transaction: a conflict record that outlived the
+    // resolution it describes would be a lie about what this app did.
+    if (conflicts.length > 0) await tx.insert(syncConflicts).values(conflicts);
   });
 
-  return { imported: live.length, cancelled: dead.length };
+  outcome.conflicts = conflicts.length;
+  return outcome;
 }

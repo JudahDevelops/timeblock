@@ -18,24 +18,29 @@ bound to headings: no standalone toggles, no arbitrary nesting.
 
 ## Stack
 
-| Concern      | Choice                                                                 |
-| ------------ | ---------------------------------------------------------------------- |
-| Framework    | Next.js 16, App Router, React 19, TypeScript strict                    |
-| Editor       | BlockNote (pinned exact — 0.x semver)                                  |
-| Database     | Supabase Postgres + Drizzle ORM                                        |
-| Auth         | Supabase Auth (app identity) + own Google OAuth flow (calendar access) |
-| Sync         | Google Calendar API, two-way                                           |
-| Styling      | Tailwind v4                                                            |
-| Server state | TanStack Query · **Client state** Zustand                              |
+| Concern   | Choice                                                                 |
+| --------- | ---------------------------------------------------------------------- |
+| Framework | Next.js 16, App Router, React 19, TypeScript strict                    |
+| Editor    | BlockNote (pinned exact — 0.x semver)                                  |
+| Database  | Supabase Postgres + Drizzle ORM                                        |
+| Auth      | Supabase Auth (app identity) + own Google OAuth flow (calendar access) |
+| Sync      | Google Calendar API, two-way                                           |
+| Styling   | Tailwind v4                                                            |
+| State     | React + URL params · TanStack Query for search and event bodies        |
 
 ## Getting started
 
 ```bash
 cp .env.example .env.local   # fill in Supabase + Google credentials
 npm install
-npm run db:push              # apply schema to your Supabase project
+npm run db:generate                                # emit a migration
+npx tsx scripts/apply-sql.ts drizzle/000N_name.sql # apply it
+npm run db:rls                                     # apply RLS policies
 npm run dev
 ```
+
+**Never `db:push`.** RLS lives in `drizzle/rls.sql`, which drizzle-kit cannot see, so
+push reads it as drift and offers to disable row-level security and drop every policy.
 
 ### Required setup
 
@@ -54,8 +59,9 @@ npm run dev
 | `npm run dev`                     | Dev server                               |
 | `npm run typecheck`               | `tsc --noEmit`                           |
 | `npm run lint` / `npm run format` | ESLint / Prettier                        |
+| `npm run test`                    | Vitest                                   |
 | `npm run db:generate`             | Emit a migration from `src/db/schema.ts` |
-| `npm run db:push`                 | Apply schema directly (dev)              |
+| `npm run db:rls`                  | Apply `drizzle/rls.sql`                  |
 | `npm run db:studio`               | Drizzle Studio                           |
 
 ## Architecture notes
@@ -73,4 +79,9 @@ npm run dev
 
 ## Status
 
-Phase 0 complete — scaffold, schema, tooling. See the phased plan for what lands next.
+Phases 0–8 complete: the grid (day/3-day/week/month), the block editor with autosave,
+full-text search, Google read and incremental sync, outbound writes, and push
+notifications. Next is conflict resolution.
+
+Push notifications only work on a deployed HTTPS domain verified in Search Console —
+locally, every connection falls back to the five-minute poll.
