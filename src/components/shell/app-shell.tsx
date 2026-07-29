@@ -139,11 +139,11 @@ function Nav({
           Calendar
         </NavLink>
         <NavLink
-          href="/settings/calendars"
+          href="/settings/integrations"
           active={pathname.startsWith("/settings")}
           onNavigate={onNavigate}
         >
-          Calendars
+          Integrations
         </NavLink>
       </nav>
 

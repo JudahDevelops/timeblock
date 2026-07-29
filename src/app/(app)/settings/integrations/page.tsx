@@ -14,7 +14,7 @@ const ERRORS: Record<string, string> = {
   sync_failed: "Connected, but the first import failed. Use Sync now to retry.",
 };
 
-export default async function CalendarSettingsPage({
+export default async function IntegrationsPage({
   searchParams,
 }: {
   searchParams: Promise<{ connected?: string; error?: string }>;
@@ -32,10 +32,10 @@ export default async function CalendarSettingsPage({
           ← Calendar
         </Link>
 
-        <h1 className="mt-6 text-xl font-semibold tracking-tight">Google Calendar</h1>
+        <h1 className="mt-6 text-xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-ink-muted mt-1 text-sm">
-          Timeblock reads your primary calendar so meetings show up on the grid. It writes nothing
-          back, and the notes you keep inside a block never leave here.
+          Google Calendar is the only one so far. Timeblock reads your primary calendar so meetings
+          show up on the grid, and the notes you keep inside a block never leave here.
         </p>
 
         {error ? (

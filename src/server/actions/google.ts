@@ -42,6 +42,6 @@ export async function disconnectGoogle(connectionId: string) {
       and(eq(googleAccounts.id, connection.googleAccountId), eq(googleAccounts.userId, userId)),
     );
 
-  revalidatePath("/settings/calendars");
+  revalidatePath("/settings/integrations");
   revalidatePath("/calendar", "page");
 }

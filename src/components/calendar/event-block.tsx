@@ -85,7 +85,11 @@ export function EventBlock({
   return (
     <div
       className={cn(
-        "absolute overflow-visible rounded-md border px-2 py-1 transition-colors select-none",
+        // A container, so the text inside can answer to the width of *this
+        // block* rather than the viewport. A week column on a phone is ~50px,
+        // but the same block in day view is the full screen, and one media
+        // query cannot tell those apart.
+        "@container absolute overflow-visible rounded-md border px-2 py-1 transition-colors select-none",
         // One fill for every block, imported or planned. Origin is not worth a
         // colour: what you actually need to see at a glance is the shape of the
         // day, and two palettes fighting each other obscured it.
@@ -193,7 +197,10 @@ export function EventBlock({
         </>
       ) : null}
 
-      <div className="flex min-w-0 items-baseline gap-1.5">
+      {/* Clipped, while the block itself stays visible so the drag handles can
+          sit proud of its edges. Without this a label wider than a week column
+          on a phone paints straight across the neighbouring days. */}
+      <div className="flex min-w-0 items-baseline gap-1.5 overflow-hidden">
         {isEditing ? (
           <input
             ref={inputRef}
@@ -226,13 +233,22 @@ export function EventBlock({
         )}
 
         {/* Too short to stack the time under the title, so it rides alongside
-            it instead of being clipped away entirely. */}
+            it — but only where both still fit. Narrower than that the range was
+            winning the whole row and leaving the title nothing, which is the
+            wrong way round: a name you cannot read is a block you cannot find,
+            while the time is already legible from the hour rule beside it. */}
         {stacked ? null : (
-          <span className="shrink-0 text-[10px] tabular-nums opacity-70">{range}</span>
+          <span className="hidden shrink-0 text-[10px] tabular-nums opacity-70 @min-[9rem]:inline">
+            {range}
+          </span>
         )}
       </div>
 
-      {stacked ? <div className="text-[10px] tabular-nums opacity-70">{range}</div> : null}
+      {stacked ? (
+        <div className="hidden truncate text-[10px] tabular-nums opacity-70 @min-[6rem]:block">
+          {range}
+        </div>
+      ) : null}
     </div>
   );
 }

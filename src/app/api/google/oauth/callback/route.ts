@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 /** The calendar every account has. Choosing among several is a later phase. */
 const PRIMARY = "primary";
 
-const SETTINGS = "/settings/calendars";
+const SETTINGS = "/settings/integrations";
 
 function back(request: Request, params: Record<string, string>) {
   const url = new URL(SETTINGS, request.url);
