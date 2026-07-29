@@ -353,7 +353,10 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
   const handleColumnPointerDown = useCallback(
     (dayIndex: number, event: React.PointerEvent) => {
       if (event.button !== 0) return;
-      setEditingId(null);
+
+      // Editing is deliberately left alone: the press blurs the title input on
+      // its own, and unmounting the input instead would skip `onBlur` and
+      // strand an unnamed draft on the grid forever.
 
       // A touch-drag on bare grid is a scroll, so touch waits for the pointer
       // to lift and only then decides whether it was a tap.
@@ -385,7 +388,17 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       const travelled = Math.hypot(event.clientX - tap.x, event.clientY - tap.y);
       if (travelled > TAP_SLOP_PX || Date.now() - tap.at > TAP_MAX_MS) return;
 
-      // A tap on empty grid while something is selected just dismisses it.
+      // A rename is in flight. The blur this tap causes will commit or discard
+      // it; touching the draft here would race that and lose the typed title.
+      if (editingId) return;
+
+      // A tap on bare grid first clears whatever is active, and only creates
+      // once nothing is — so the second tap is never a surprise.
+      if (draft) {
+        setDraft(null);
+        setSelectedId(null);
+        return;
+      }
       if (selectedId) {
         setSelectedId(null);
         return;
@@ -403,7 +416,7 @@ export function TimeGrid({ days, events }: { days: Date[]; events: CalendarEvent
       setSelectedId(id);
       setEditingId(id);
     },
-    [days, minutesFromEvent, selectedId],
+    [days, draft, editingId, minutesFromEvent, selectedId],
   );
 
   const handleColumnPointerCancel = useCallback(() => {

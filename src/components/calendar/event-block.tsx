@@ -92,14 +92,26 @@ export function EventBlock({
         // unselected block still lets the grid scroll under the finger.
         touchAction: !isCoarse || isSelected ? "none" : "auto",
       }}
+      onMouseDown={(event) => {
+        // A browser replays every touch as mouse events a few hundred
+        // milliseconds later. Those land on whatever is under the finger by
+        // then — here, the block that tap just created — and this div is
+        // focusable, so the phantom press would pull focus off the title
+        // input, fire `onBlur` with an empty value and bin the new draft.
+        if (isEditing && event.target !== inputRef.current) event.preventDefault();
+      }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || isEditing) return;
+        if (event.button !== 0) return;
         // Keep the press off the column, which would otherwise handle it.
+        // Ahead of everything else: a press on a block mid-rename must not
+        // fall through and be read as a tap on bare grid. Dragging stays live
+        // while the title input is open, so a new block can be nudged into
+        // place and named in one go; the input stops its own presses.
         event.stopPropagation();
 
         const touch = event.pointerType === "touch";
 
-        if (touch) {
+        if (touch && !isEditing) {
           const { clientX: x, clientY: y } = event;
           holdRef.current = {
             x,
