@@ -47,6 +47,19 @@ export class GoogleApiError extends Error {
   get isSyncTokenExpired(): boolean {
     return this.status === 410;
   }
+
+  /**
+   * The event is not there. On a delete that is success by another name, and on
+   * a patch it means someone removed it in Google while we still held a link.
+   */
+  get isGone(): boolean {
+    return this.status === 404 || this.status === 410;
+  }
+
+  /** The grant does not cover writes — the user consented to read-only. */
+  get isForbidden(): boolean {
+    return this.status === 401 || this.status === 403;
+  }
 }
 
 /**
@@ -106,6 +119,31 @@ export function incrementalParams(syncToken: string): URLSearchParams {
   return new URLSearchParams({ maxResults: String(PAGE_SIZE), syncToken });
 }
 
+async function call<T>(
+  accessToken: string,
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const response = await fetch(`${CALENDAR_BASE}${path}`, {
+    method: init.method ?? "GET",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    cache: "no-store",
+  });
+
+  if (!response.ok) throw await toApiError(response);
+  // `events.delete` answers 204 with no body, and `.json()` would throw on it.
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
+
+function eventsPath(calendarId: string): string {
+  return `/calendars/${encodeURIComponent(calendarId)}/events`;
+}
+
 export async function listEvents(
   accessToken: string,
   calendarId: string,
@@ -114,15 +152,7 @@ export async function listEvents(
 ): Promise<EventsPage> {
   const query = new URLSearchParams(params);
   if (pageToken) query.set("pageToken", pageToken);
-
-  const url = `${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events?${query}`;
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
-  });
-
-  if (!response.ok) throw await toApiError(response);
-  return response.json();
+  return call(accessToken, `${eventsPath(calendarId)}?${query}`);
 }
 
 /** The user's own calendar list, for showing which one is being synced. */
@@ -130,12 +160,51 @@ export async function getCalendar(
   accessToken: string,
   calendarId: string,
 ): Promise<{ id: string; summary?: string; timeZone?: string }> {
-  const response = await fetch(`${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}`, {
-    headers: { authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
+  return call(accessToken, `/calendars/${encodeURIComponent(calendarId)}`);
+}
+
+/** The fields we send. Anything absent stays whatever Google already had. */
+export type EventWrite = {
+  summary: string;
+  description: string;
+  start: GoogleDateTime;
+  end: GoogleDateTime;
+  extendedProperties: { private: Record<string, string> };
+};
+
+export async function insertEvent(
+  accessToken: string,
+  calendarId: string,
+  event: EventWrite,
+): Promise<GoogleEvent> {
+  return call(accessToken, eventsPath(calendarId), { method: "POST", body: event });
+}
+
+/**
+ * PATCH, not PUT. A full update would blank every field we do not send —
+ * attendees, conferencing, colour, reminders — and those belong to the user,
+ * not to us.
+ */
+export async function patchEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  event: Partial<EventWrite>,
+): Promise<GoogleEvent> {
+  return call(accessToken, `${eventsPath(calendarId)}/${encodeURIComponent(eventId)}`, {
+    method: "PATCH",
+    body: event,
   });
-  if (!response.ok) throw await toApiError(response);
-  return response.json();
+}
+
+export async function deleteEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
+  await call(accessToken, `${eventsPath(calendarId)}/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  });
 }
 
 async function toApiError(response: Response): Promise<GoogleApiError> {

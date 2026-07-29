@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
 import { events } from "@/db/schema";
+import { pushEventBestEffort } from "@/lib/sync/push";
 import { requireUserId } from "@/server/auth";
 
 const MAX_TITLE_LENGTH = 500;
@@ -42,6 +43,7 @@ export async function createEvent(input: {
     })
     .returning({ id: events.id });
 
+  await pushEventBestEffort(userId, row.id);
   revalidatePath("/calendar", "page");
   return row;
 }
@@ -59,6 +61,7 @@ export async function updateEventTime(input: { id: string; startsAt: Date; endsA
 
   if (updated.length === 0) throw new Error("Event not found");
 
+  await pushEventBestEffort(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
@@ -73,6 +76,7 @@ export async function updateEventTitle(input: { id: string; title: string }) {
 
   if (updated.length === 0) throw new Error("Event not found");
 
+  await pushEventBestEffort(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
@@ -88,5 +92,8 @@ export async function deleteEvent(id: string) {
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(events.id, id), eq(events.userId, userId)));
 
+  // The tombstone is what the push reads to know this is a withdrawal, so it
+  // has to be written first.
+  await pushEventBestEffort(userId, id);
   revalidatePath("/calendar", "page");
 }

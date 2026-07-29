@@ -9,18 +9,31 @@ import { publicEnv, serverEnv } from "@/env";
 import { seal, unseal } from "@/lib/crypto";
 
 /**
- * Read-only for now. Phase 5 renders Google events and writes nothing, and
- * asking only for what we use means the API itself rejects a write — a stronger
- * guarantee than our own discipline while the sync engine is unproven.
+ * `calendar.events` rather than the full `calendar` scope, which also grants
+ * the power to delete entire calendars and rewrite their sharing rules. This
+ * app creates, edits and removes events and has no business holding more than
+ * that. `calendar.readonly` rides alongside because `calendars.get` — how the
+ * sync learns a calendar's timezone — is not covered by the events scope.
  *
- * Phase 7 widens this to `.../auth/calendar`; `include_granted_scopes` below
- * makes that an incremental upgrade rather than a fresh grant.
+ * Widening this leaves existing grants read-only until the user consents again:
+ * a refresh token carries the scopes it was minted with. `include_granted_scopes`
+ * below makes that consent an upgrade rather than a fresh start.
  */
 export const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
   "openid",
   "email",
 ];
+
+/** Whether a stored grant actually permits the writes Phase 7 makes. */
+export function canWrite(scopes: string[]): boolean {
+  return scopes.some(
+    (scope) =>
+      scope === "https://www.googleapis.com/auth/calendar.events" ||
+      scope === "https://www.googleapis.com/auth/calendar",
+  );
+}
 
 /** Refresh this far ahead of expiry, so a slow request cannot outlive its token. */
 const REFRESH_SKEW_MS = 120_000;

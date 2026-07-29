@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
 import { secretsMatch } from "@/lib/crypto";
-import { exchangeCode, saveGrant } from "@/lib/google/auth";
+import { canWrite, exchangeCode, saveGrant } from "@/lib/google/auth";
 import { syncConnection } from "@/lib/sync/engine";
 import { requireUserId } from "@/server/auth";
 
@@ -47,6 +47,12 @@ export async function GET(request: Request) {
     const tokens = await exchangeCode(code);
     const accountId = await saveGrant(userId, tokens);
 
+    // Two gates, not one. The scope is what Google enforces; `direction` is
+    // what this app enforces, and it is derived from the scope actually
+    // granted rather than the one we asked for — a user can untick calendar
+    // access on the consent screen and still complete the flow.
+    const direction = canWrite(tokens.scopes) ? "both" : "read";
+
     // One row per calendar we follow. Reconnecting keeps the existing row so
     // its sync cursor survives; a second row would re-import everything.
     const [connection] = await db
@@ -55,11 +61,13 @@ export async function GET(request: Request) {
         userId,
         googleAccountId: accountId,
         gcalCalendarId: PRIMARY,
-        direction: "read",
+        direction,
       })
       .onConflictDoUpdate({
         target: [calendarConnections.googleAccountId, calendarConnections.gcalCalendarId],
-        set: { userId },
+        // Re-consenting is how a read-only connection is upgraded to writing,
+        // so this must move with the grant.
+        set: { userId, direction },
       })
       .returning({ id: calendarConnections.id });
 

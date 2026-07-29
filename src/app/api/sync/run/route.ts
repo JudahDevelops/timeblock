@@ -7,9 +7,12 @@ import { secretsMatch } from "@/lib/crypto";
 import { serverEnv } from "@/env";
 import { GoogleRevokedError } from "@/lib/google/auth";
 import { syncConnection, type SyncOutcome } from "@/lib/sync/engine";
+import { pushPending, type PushResult } from "@/lib/sync/push";
 import { requireUserId } from "@/server/auth";
 
 export const runtime = "nodejs";
+
+type RunResult = SyncOutcome & { pushed: Record<PushResult, number> };
 
 /**
  * Runs a sync for every connected calendar.
@@ -24,13 +27,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const connections = await db.select({ id: calendarConnections.id }).from(calendarConnections);
+  const connections = await db
+    .select({ id: calendarConnections.id, userId: calendarConnections.userId })
+    .from(calendarConnections);
 
-  const results: Record<string, SyncOutcome | { error: string }> = {};
+  const results: Record<string, RunResult | { error: string }> = {};
 
   for (const connection of connections) {
     try {
-      results[connection.id] = await syncConnection(connection.id);
+      results[connection.id] = await runBoth(connection.id, connection.userId);
     } catch (cause) {
       // One dead connection must not stop the others. A revoked grant is
       // expected and already recorded on the account; anything else is a bug.
@@ -44,6 +49,18 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ ran: connections.length, results });
+}
+
+/**
+ * Push first, then pull.
+ *
+ * Order matters: a local edit that reached Google before the pull comes back
+ * marked with our id and is skipped as an echo. The other way round, the pull
+ * would report the pre-push state and briefly contradict what is on screen.
+ */
+async function runBoth(connectionId: string, userId: string): Promise<RunResult> {
+  const pushed = await pushPending(userId);
+  return { ...(await syncConnection(connectionId)), pushed };
 }
 
 /** Manual "Sync now" from the settings page, scoped to the signed-in user. */
@@ -71,7 +88,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await syncConnection(connectionId));
+    return NextResponse.json(await runBoth(connectionId, userId));
   } catch (cause) {
     if (cause instanceof GoogleRevokedError) {
       return NextResponse.json({ error: "revoked" }, { status: 409 });
