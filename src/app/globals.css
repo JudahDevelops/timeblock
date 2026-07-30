@@ -135,3 +135,11 @@ textarea,
   border-radius: 0;
   color: inherit;
 }
+
+/* On standalone pages the editor body must align flush with the title above
+   it — Notion does this by zeroing the editor's own horizontal padding and
+   letting the page container supply all of it. The `.page-editor` wrapper
+   is only added by page-detail, so the drawer's editor keeps its padding. */
+.page-editor .bn-root .bn-editor {
+  padding-inline: 0;
+}

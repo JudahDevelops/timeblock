@@ -71,7 +71,7 @@ export function PageDetail({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-6 pt-16 pb-24 sm:px-12">
+      <div className="mx-auto w-full max-w-[900px] px-6 pt-16 pb-24 sm:px-24">
         {/* Emoji icon — click to change */}
         <div className="relative mb-4">
           <button
@@ -141,7 +141,7 @@ function PageBody({ doc, onDelete }: { doc: PageDocument; onDelete: () => void }
         </p>
       ) : null}
 
-      <div className="mt-1 min-h-[60vh]">
+      <div className="page-editor mt-1 min-h-[60vh]">
         <BlockEditor initialContent={doc.body} onChange={scheduleSave} />
       </div>
 
