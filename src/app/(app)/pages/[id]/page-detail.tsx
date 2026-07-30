@@ -77,7 +77,7 @@ export function PageDetail({
           <button
             type="button"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="hover:bg-surface-raised rounded-lg p-1 text-5xl transition-colors"
+            className="hover:bg-surface-raised rounded-lg p-1 text-[78px] leading-none transition-colors"
             aria-label="Change icon"
           >
             {emoji ?? "📄"}
@@ -91,7 +91,7 @@ export function PageDetail({
         <input
           defaultValue={initialTitle}
           placeholder="Untitled"
-          className="placeholder:text-ink-faint mb-2 w-full bg-transparent text-4xl font-bold outline-none"
+          className="placeholder:text-ink-faint mb-2 w-full bg-transparent text-[40px] leading-tight font-bold outline-none"
           onBlur={(e) => handleRename(e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();

@@ -143,3 +143,17 @@ textarea,
 .page-editor .bn-root .bn-editor {
   padding-inline: 0;
 }
+
+/* BlockNote's H1 must not outsize the page title (40px). Cap it at 30px so
+   the page name always dominates visually. */
+.page-editor .bn-root h1[data-level="1"] {
+  font-size: 30px;
+}
+
+.page-editor .bn-root h2[data-level="2"] {
+  font-size: 24px;
+}
+
+.page-editor .bn-root h3[data-level="3"] {
+  font-size: 20px;
+}
