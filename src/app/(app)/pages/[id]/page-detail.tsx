@@ -8,7 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { PageDocument } from "@/app/api/pages/[id]/body/route";
 import { useBodyAutosave, type SaveState } from "@/components/editor/use-body-autosave";
 import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/pages";
-import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
 
 import { EmojiPicker } from "./emoji-picker";
@@ -71,64 +70,42 @@ export function PageDetail({
   });
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <header className="border-line flex shrink-0 items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <SidebarTrigger />
-        <button
-          type="button"
-          onClick={() => router.push("/pages")}
-          className="text-ink-muted hover:text-ink text-sm"
-          aria-label="Back to pages"
-        >
-          <svg
-            viewBox="0 0 20 20"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.75}
-            strokeLinecap="round"
-            aria-hidden
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-6 pt-16 pb-24 sm:px-12">
+        {/* Emoji icon — click to change */}
+        <div className="relative mb-4">
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="hover:bg-surface-raised rounded-lg p-1 text-5xl transition-colors"
+            aria-label="Change icon"
           >
-            <path d="M12 4l-6 6 6 6" />
-          </svg>
-        </button>
-        <span className="text-ink-muted text-sm">Pages</span>
-      </header>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-          <div className="mb-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="hover:bg-surface-raised rounded-lg p-1 text-3xl transition-colors"
-              aria-label="Change icon"
-            >
-              {emoji ?? "📄"}
-            </button>
-            {showEmojiPicker ? (
-              <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmojiPicker(false)} />
-            ) : null}
-          </div>
-
-          <input
-            defaultValue={initialTitle}
-            placeholder="Untitled"
-            className="placeholder:text-ink-faint mb-6 w-full bg-transparent text-3xl font-bold outline-none"
-            onBlur={(e) => handleRename(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-          />
-
-          {isError ? (
-            <p className="text-danger text-sm">Couldn&apos;t load this page. Try refreshing.</p>
-          ) : isPending ? (
-            <p className="text-ink-faint text-sm">Loading…</p>
-          ) : (
-            <PageBody doc={data} onDelete={handleDelete} />
-          )}
+            {emoji ?? "📄"}
+          </button>
+          {showEmojiPicker ? (
+            <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmojiPicker(false)} />
+          ) : null}
         </div>
+
+        {/* Title — large, bold, inline editable */}
+        <input
+          defaultValue={initialTitle}
+          placeholder="Untitled"
+          className="placeholder:text-ink-faint mb-2 w-full bg-transparent text-4xl font-bold outline-none"
+          onBlur={(e) => handleRename(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+        />
+
+        {/* Body */}
+        {isError ? (
+          <p className="text-danger mt-8 text-sm">Couldn&apos;t load this page. Try refreshing.</p>
+        ) : isPending ? (
+          <p className="text-ink-faint mt-8 text-sm">Loading…</p>
+        ) : (
+          <PageBody doc={data} onDelete={handleDelete} />
+        )}
       </div>
     </div>
   );
@@ -164,11 +141,11 @@ function PageBody({ doc, onDelete }: { doc: PageDocument; onDelete: () => void }
         </p>
       ) : null}
 
-      <div className="min-h-[50vh]">
+      <div className="mt-1 min-h-[60vh]">
         <BlockEditor initialContent={doc.body} onChange={scheduleSave} />
       </div>
 
-      <footer className="border-line mt-8 flex items-center border-t pt-4">
+      <div className="border-line mt-12 flex items-center border-t pt-4">
         <button
           type="button"
           onClick={onDelete}
@@ -184,7 +161,7 @@ function PageBody({ doc, onDelete }: { doc: PageDocument; onDelete: () => void }
         >
           {STATUS_LABEL[state]}
         </span>
-      </footer>
+      </div>
     </>
   );
 }

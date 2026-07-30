@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import { signOut } from "@/server/actions/auth";
+import { createPage } from "@/server/actions/pages";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -44,14 +53,18 @@ export function SidebarTrigger() {
   );
 }
 
+export type SidebarPage = { id: string; title: string; emoji: string | null };
+
 export function AppShell({
   email,
   todayParam,
+  pages,
   children,
 }: {
   email: string;
   /** `yyyy-MM-dd` for today, resolved on the server so rendering stays pure. */
   todayParam: string;
+  pages: SidebarPage[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -61,8 +74,6 @@ export function AppShell({
 
   useEffect(() => {
     if (!open) return;
-    // Focus moves to the panel so the next Tab lands inside it rather than
-    // continuing through the calendar behind the backdrop.
     panel.current?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
@@ -76,7 +87,7 @@ export function AppShell({
     <OpenSidebar.Provider value={openMenu}>
       <div className="flex flex-1 overflow-hidden">
         <aside className="border-line hidden w-56 shrink-0 flex-col border-r p-4 md:flex">
-          <Nav email={email} todayParam={todayParam} />
+          <Nav email={email} todayParam={todayParam} pages={pages} />
         </aside>
 
         {open ? (
@@ -95,7 +106,7 @@ export function AppShell({
               aria-label="Menu"
               className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r p-4 outline-none"
             >
-              <Nav email={email} todayParam={todayParam} onNavigate={close} />
+              <Nav email={email} todayParam={todayParam} pages={pages} onNavigate={close} />
             </div>
           </div>
         ) : null}
@@ -118,10 +129,12 @@ export function AppShell({
 function Nav({
   email,
   todayParam,
+  pages,
   onNavigate,
 }: {
   email: string;
   todayParam: string;
+  pages: SidebarPage[];
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -140,9 +153,6 @@ function Nav({
         >
           Calendar
         </NavLink>
-        <NavLink href="/pages" active={pathname.startsWith("/pages")} onNavigate={onNavigate}>
-          Pages
-        </NavLink>
         <NavLink
           href="/settings/integrations"
           active={pathname.startsWith("/settings")}
@@ -151,6 +161,8 @@ function Nav({
           Integrations
         </NavLink>
       </nav>
+
+      <PagesSection pages={pages} onNavigate={onNavigate} />
 
       <div className="border-line mt-6 border-t pt-6">
         <ThemeToggle />
@@ -170,6 +182,96 @@ function Nav({
         </form>
       </div>
     </>
+  );
+}
+
+function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?: () => void }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [expanded, setExpanded] = useState(pathname.startsWith("/pages"));
+  const [pending, startTransition] = useTransition();
+
+  const handleCreate = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    startTransition(async () => {
+      const row = await createPage({ title: "" });
+      router.push(`/pages/${row.id}`);
+      onNavigate?.();
+    });
+  };
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-ink-muted hover:text-ink flex flex-1 items-center gap-1 px-2 py-1 text-xs font-medium tracking-wider uppercase transition-colors"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+          Pages
+        </button>
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={pending}
+          aria-label="New page"
+          className="text-ink-muted hover:text-ink hover:bg-surface-raised rounded p-1 transition-colors disabled:opacity-50"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {pages.length === 0 ? (
+            <p className="text-ink-faint px-2 py-1 text-xs">No pages yet</p>
+          ) : (
+            pages.map((page) => {
+              const active = pathname === `/pages/${page.id}`;
+              return (
+                <Link
+                  key={page.id}
+                  href={`/pages/${page.id}`}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active
+                      ? "bg-surface-raised text-ink font-medium"
+                      : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  <span className="shrink-0 text-sm" aria-hidden>
+                    {page.emoji ?? "📄"}
+                  </span>
+                  <span className="min-w-0 truncate">{page.title || "Untitled"}</span>
+                </Link>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
