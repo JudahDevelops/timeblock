@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Providers } from "@/app/providers";
 import { AppShell } from "@/components/shell/app-shell";
 import { ToastProvider } from "@/components/shell/toast";
-import { calendarPath } from "@/lib/date";
+import { toDateParam } from "@/lib/date";
 import { requireUser, type SessionUser } from "@/server/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <Providers>
       <ToastProvider>
-        <AppShell email={user.email} calendarHref={calendarPath("week", new Date())}>
+        <AppShell email={user.email} todayParam={toDateParam(new Date())}>
           {children}
         </AppShell>
       </ToastProvider>
