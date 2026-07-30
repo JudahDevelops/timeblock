@@ -3,14 +3,15 @@
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 
-import { useState } from "react";
-import type { BlockNoteEditor } from "@blocknote/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Block, BlockNoteEditor } from "@blocknote/core";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useCreateBlockNote } from "@blocknote/react";
 
 import type { BlockDocument } from "@/lib/editor/document";
 import { useCoarsePointer } from "@/lib/use-coarse-pointer";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { cn } from "@/lib/utils";
 
 /**
  * The block canvas. Mounted through `next/dynamic` with `ssr: false` — BlockNote
@@ -36,11 +37,41 @@ export default function BlockEditor({
     initialContent: initialContent.length > 0 ? initialContent : undefined,
   });
 
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    block: Block;
+  } | null>(null);
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      // Walk up from the click target to find the block element
+      const target = event.target as HTMLElement;
+      const blockEl = target.closest("[data-node-type='blockContainer']");
+      if (!blockEl) return;
+
+      event.preventDefault();
+
+      // Get the block id from the element
+      const blockId = blockEl.getAttribute("data-id");
+      if (!blockId) return;
+
+      const block = editor.getBlock(blockId);
+      if (!block) return;
+
+      setContextMenu({ x: event.clientX, y: event.clientY, block });
+    },
+    [editor],
+  );
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
   return (
     <div
-      className="flex min-h-full flex-col"
+      className="relative flex min-h-full flex-col"
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onContextMenu={handleContextMenu}
     >
       <BlockNoteView
         editor={editor}
@@ -49,6 +80,16 @@ export default function BlockEditor({
         className="flex-1"
       />
       {coarse && focused ? <NestingBar editor={editor} /> : null}
+      {contextMenu ? (
+        <EditorContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          block={contextMenu.block}
+          editor={editor}
+          onClose={closeContextMenu}
+          onChange={() => onChange(editor.document)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -87,6 +128,107 @@ function NestingBar({ editor }: { editor: BlockNoteEditor }) {
         <path d="M9 5h8M9 10h8M9 15h8M3 7l3 3-3 3" />
       </NestingButton>
     </div>
+  );
+}
+
+function EditorContextMenu({
+  x,
+  y,
+  block,
+  editor,
+  onClose,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  block: Block;
+  editor: BlockNoteEditor;
+  onClose: () => void;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [onClose]);
+
+  // Keep the menu within viewport bounds
+  const style: React.CSSProperties = {
+    position: "fixed",
+    left: x,
+    top: y,
+    zIndex: 100,
+  };
+
+  const handleDelete = () => {
+    editor.removeBlocks([block]);
+    onChange();
+    onClose();
+  };
+
+  const handleDuplicate = () => {
+    const copy = { ...block, id: undefined } as Parameters<typeof editor.insertBlocks>[0][0];
+    editor.insertBlocks([copy], block, "after");
+    onChange();
+    onClose();
+  };
+
+  const handleTurnIntoParagraph = () => {
+    editor.updateBlock(block, { type: "paragraph" });
+    onChange();
+    onClose();
+  };
+
+  return (
+    <div
+      ref={ref}
+      style={style}
+      role="menu"
+      className="bg-surface-raised border-line min-w-[160px] rounded-lg border py-1 shadow-xl"
+    >
+      <ContextMenuItem label="Delete" onSelect={handleDelete} destructive />
+      <ContextMenuItem label="Duplicate" onSelect={handleDuplicate} />
+      {block.type !== "paragraph" ? (
+        <ContextMenuItem label="Turn into text" onSelect={handleTurnIntoParagraph} />
+      ) : null}
+    </div>
+  );
+}
+
+function ContextMenuItem({
+  label,
+  onSelect,
+  destructive,
+}: {
+  label: string;
+  onSelect: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className={cn(
+        "hover:bg-surface-sunken w-full px-3 py-1.5 text-left text-sm transition-colors",
+        destructive ? "text-danger" : "text-ink",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

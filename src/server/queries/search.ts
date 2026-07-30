@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, pages } from "@/db/schema";
 import { HIGHLIGHT_END, HIGHLIGHT_START } from "@/lib/search/highlight";
 
 /**
@@ -66,6 +66,40 @@ export async function searchEvents(
   return rows.map((row) => ({
     ...row,
     // A body is one line per block, so a raw snippet arrives full of newlines.
+    snippet: row.snippet.replace(/\s+/g, " ").trim(),
+  }));
+}
+
+export type PageSearchHit = {
+  id: string;
+  title: string;
+  emoji: string | null;
+  snippet: string;
+};
+
+export async function searchPages(
+  userId: string,
+  tsquery: string,
+  limit = 20,
+): Promise<PageSearchHit[]> {
+  const query = sql`to_tsquery('english', ${tsquery})`;
+
+  const rows = await db
+    .select({
+      id: pages.id,
+      title: pages.title,
+      emoji: pages.emoji,
+      snippet: sql<string>`ts_headline('english', coalesce(${pages.bodyText}, ''), ${query}, ${HEADLINE_OPTIONS})`,
+    })
+    .from(pages)
+    .where(
+      and(eq(pages.userId, userId), isNull(pages.deletedAt), sql`${pages.searchTsv} @@ ${query}`),
+    )
+    .orderBy(sql`ts_rank_cd(${pages.searchTsv}, ${query}) desc`)
+    .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
     snippet: row.snippet.replace(/\s+/g, " ").trim(),
   }));
 }

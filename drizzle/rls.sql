@@ -36,6 +36,14 @@ create policy calendar_connections_owner on public.calendar_connections
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+alter table public.pages enable row level security;
+drop policy if exists pages_owner on public.pages;
+create policy pages_owner on public.pages
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 alter table public.sync_conflicts enable row level security;
 drop policy if exists sync_conflicts_owner on public.sync_conflicts;
 create policy sync_conflicts_owner on public.sync_conflicts

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { signOut } from "@/server/actions/auth";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -45,13 +46,12 @@ export function SidebarTrigger() {
 
 export function AppShell({
   email,
-  calendarHref,
+  todayParam,
   children,
 }: {
   email: string;
-  // Resolved on the server: `new Date()` is not something a component may read
-  // while rendering, and "this week" is only correct at the moment it is asked.
-  calendarHref: string;
+  /** `yyyy-MM-dd` for today, resolved on the server so rendering stays pure. */
+  todayParam: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -76,7 +76,7 @@ export function AppShell({
     <OpenSidebar.Provider value={openMenu}>
       <div className="flex flex-1 overflow-hidden">
         <aside className="border-line hidden w-56 shrink-0 flex-col border-r p-4 md:flex">
-          <Nav email={email} calendarHref={calendarHref} />
+          <Nav email={email} todayParam={todayParam} />
         </aside>
 
         {open ? (
@@ -95,7 +95,7 @@ export function AppShell({
               aria-label="Menu"
               className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r p-4 outline-none"
             >
-              <Nav email={email} calendarHref={calendarHref} onNavigate={close} />
+              <Nav email={email} todayParam={todayParam} onNavigate={close} />
             </div>
           </div>
         ) : null}
@@ -117,14 +117,16 @@ export function AppShell({
  */
 function Nav({
   email,
-  calendarHref,
+  todayParam,
   onNavigate,
 }: {
   email: string;
-  calendarHref: string;
+  todayParam: string;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const wide = useMediaQuery("(min-width: 640px)", true);
+  const calendarHref = `/calendar/${wide ? "3day" : "day"}/${todayParam}`;
 
   return (
     <>
@@ -137,6 +139,9 @@ function Nav({
           onNavigate={onNavigate}
         >
           Calendar
+        </NavLink>
+        <NavLink href="/pages" active={pathname.startsWith("/pages")} onNavigate={onNavigate}>
+          Pages
         </NavLink>
         <NavLink
           href="/settings/integrations"

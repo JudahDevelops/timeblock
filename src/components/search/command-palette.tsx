@@ -88,8 +88,11 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
 
   function go(hit: SearchResult) {
     onClose();
-    // Same view, the event's day, and the id the grid opens on arrival.
-    router.push(`${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}`);
+    if (hit.kind === "page") {
+      router.push(`/pages/${hit.id}`);
+    } else {
+      router.push(`${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}`);
+    }
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
@@ -139,12 +142,21 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
               )}
             >
               <span className="flex w-full items-baseline gap-2">
+                {hit.kind === "page" ? (
+                  <span className="shrink-0 text-sm" aria-hidden>
+                    {hit.emoji ?? "📄"}
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate text-sm">
-                  {hit.title || "Untitled block"}
+                  {hit.title || (hit.kind === "page" ? "Untitled" : "Untitled block")}
                 </span>
-                <span className="text-ink-faint shrink-0 text-xs tabular-nums">
-                  {format(new Date(hit.startsAt), "d MMM · HH:mm")}
-                </span>
+                {hit.kind === "page" ? (
+                  <span className="text-ink-faint shrink-0 text-xs">Page</span>
+                ) : (
+                  <span className="text-ink-faint shrink-0 text-xs tabular-nums">
+                    {format(new Date(hit.startsAt), "d MMM · HH:mm")}
+                  </span>
+                )}
               </span>
               {hit.snippet ? (
                 <span className="text-ink-muted line-clamp-1 text-xs">

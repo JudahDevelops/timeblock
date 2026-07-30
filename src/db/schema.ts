@@ -242,9 +242,50 @@ export const syncConflicts = pgTable(
   (t) => [index("sync_conflicts_event_idx").on(t.localEventId)],
 );
 
+/**
+ * A standalone page — not tied to any time slot. The user's Notion-style
+ * scratchpad: a title, an optional emoji, and a BlockNote document.
+ */
+export const pages = pgTable(
+  "pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+
+    title: text("title").notNull().default(""),
+    /** A single emoji displayed beside the title, like Notion page icons. */
+    emoji: text("emoji"),
+
+    /** BlockNote `Block[]`. Same format as event bodies. */
+    body: jsonb("body")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Plaintext rendering of `body`, derived server-side. Feeds search. */
+    bodyText: text("body_text"),
+    /** Optimistic concurrency guard for autosave. */
+    bodyRev: integer("body_rev").notNull().default(0),
+
+    /** Soft delete, same tombstone approach as events. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
+    searchTsv: tsvector("search_tsv").generatedAlwaysAs(
+      sql`to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body_text, ''))`,
+    ),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("pages_search_idx").using("gin", t.searchTsv),
+    index("pages_user_idx").on(t.userId),
+  ],
+);
+
 export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
 export type CalendarConnection = typeof calendarConnections.$inferSelect;
 export type EventLink = typeof eventLinks.$inferSelect;
 export type SyncJob = typeof syncJobs.$inferSelect;
+export type Page = typeof pages.$inferSelect;
+export type NewPage = typeof pages.$inferInsert;

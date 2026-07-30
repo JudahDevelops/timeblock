@@ -23,10 +23,13 @@ export function useBodyAutosave({
   eventId,
   initialRev,
   onConflict,
+  basePath = "/api/events",
 }: {
   eventId: string;
   initialRev: number;
   onConflict: (winning: EventDocument) => void;
+  /** Override to `/api/pages` for standalone pages. */
+  basePath?: string;
 }) {
   const [state, setState] = useState<SaveState>("idle");
 
@@ -57,7 +60,7 @@ export function useBodyAutosave({
         pendingRef.current = null;
         setState("saving");
 
-        const response = await fetch(`/api/events/${eventId}/body`, {
+        const response = await fetch(`${basePath}/${eventId}/body`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ body, baseRev: revRef.current }),
@@ -87,7 +90,7 @@ export function useBodyAutosave({
     } finally {
       inFlightRef.current = false;
     }
-  }, [clearTimers, eventId, onConflict]);
+  }, [basePath, clearTimers, eventId, onConflict]);
 
   const scheduleSave = useCallback(
     (body: BlockDocument) => {
@@ -121,10 +124,10 @@ export function useBodyAutosave({
     if (body === null) return;
     pendingRef.current = null;
     navigator.sendBeacon(
-      `/api/events/${eventId}/body`,
+      `${basePath}/${eventId}/body`,
       new Blob([JSON.stringify({ body, baseRev: revRef.current })], { type: "application/json" }),
     );
-  }, [eventId]);
+  }, [basePath, eventId]);
 
   useEffect(() => {
     function onHidden() {

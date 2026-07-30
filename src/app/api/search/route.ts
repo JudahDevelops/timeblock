@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { toPrefixTsQuery } from "@/lib/search/query";
 import { requireUserId } from "@/server/auth";
-import { searchEvents } from "@/server/queries/search";
+import { searchEvents, searchPages } from "@/server/queries/search";
 
 /** Shares the Postgres pool with the rest of the server; not edge-compatible. */
 export const runtime = "nodejs";
@@ -15,6 +15,8 @@ export type SearchResult = {
   title: string;
   startsAt: string;
   snippet: string;
+  kind: "event" | "page";
+  emoji?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -24,12 +26,25 @@ export async function GET(request: Request) {
   const tsquery = toPrefixTsQuery(raw.slice(0, MAX_QUERY_LENGTH));
   // Punctuation alone parses to nothing. Answering with an empty list beats a
   // round-trip to Postgres that can only match nothing.
-  const results: SearchResult[] = tsquery
-    ? (await searchEvents(userId, tsquery)).map((hit) => ({
+  let results: SearchResult[] = [];
+  if (tsquery) {
+    const [eventHits, pageHits] = await Promise.all([
+      searchEvents(userId, tsquery),
+      searchPages(userId, tsquery),
+    ]);
+    results = [
+      ...eventHits.map((hit) => ({
         ...hit,
         startsAt: hit.startsAt.toISOString(),
-      }))
-    : [];
+        kind: "event" as const,
+      })),
+      ...pageHits.map((hit) => ({
+        ...hit,
+        startsAt: "",
+        kind: "page" as const,
+      })),
+    ];
+  }
 
   // Results turn stale the moment a body is autosaved, and they are personal.
   return NextResponse.json({ results }, { headers: { "cache-control": "no-store" } });
