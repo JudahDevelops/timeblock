@@ -144,16 +144,18 @@ textarea,
   padding-inline: 0;
 }
 
-/* BlockNote's H1 must not outsize the page title (40px). Cap it at 30px so
-   the page name always dominates visually. */
-.page-editor .bn-root h1[data-level="1"] {
-  font-size: 30px;
+/* BlockNote headings use `[data-content-type=heading]` with a `--level` CSS
+   variable (H1 = 3em, H2 = 2em, H3 = 1.3em). On standalone pages the page
+   title is 40px, so headings must stay below it. Override the variable at
+   each level so the hierarchy reads: emoji > title > H1 > H2 > H3. */
+.page-editor [data-content-type="heading"] {
+  --level: 1.875em !important;
 }
 
-.page-editor .bn-root h2[data-level="2"] {
-  font-size: 24px;
+.page-editor [data-content-type="heading"][data-level="2"] {
+  --level: 1.5em !important;
 }
 
-.page-editor .bn-root h3[data-level="3"] {
-  font-size: 20px;
+.page-editor [data-content-type="heading"][data-level="3"] {
+  --level: 1.25em !important;
 }
