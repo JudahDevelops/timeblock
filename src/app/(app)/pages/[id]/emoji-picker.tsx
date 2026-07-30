@@ -1,134 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { type EmojiClickData, Theme } from "emoji-picker-react";
 
-const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
-  {
-    label: "Smileys",
-    emojis: [
-      "😀",
-      "😃",
-      "😄",
-      "😁",
-      "😆",
-      "😅",
-      "🤣",
-      "😂",
-      "🙂",
-      "😊",
-      "😇",
-      "🥰",
-      "😍",
-      "🤩",
-      "😘",
-      "😎",
-      "🤔",
-      "🤗",
-      "🫡",
-      "🤫",
-    ],
-  },
-  {
-    label: "Objects",
-    emojis: [
-      "📄",
-      "📝",
-      "📋",
-      "📌",
-      "📎",
-      "📁",
-      "📂",
-      "🗂️",
-      "📅",
-      "📆",
-      "🔖",
-      "📕",
-      "📗",
-      "📘",
-      "📙",
-      "📚",
-      "📖",
-      "🔗",
-      "💡",
-      "🔍",
-    ],
-  },
-  {
-    label: "Symbols",
-    emojis: [
-      "⭐",
-      "🌟",
-      "✨",
-      "💫",
-      "🔥",
-      "❤️",
-      "🧡",
-      "💛",
-      "💚",
-      "💙",
-      "💜",
-      "🖤",
-      "🤍",
-      "💯",
-      "✅",
-      "❌",
-      "⚡",
-      "🎯",
-      "🚀",
-      "🏆",
-    ],
-  },
-  {
-    label: "Nature",
-    emojis: [
-      "🌱",
-      "🌿",
-      "🍀",
-      "🌺",
-      "🌻",
-      "🌸",
-      "🌈",
-      "☀️",
-      "🌙",
-      "⛅",
-      "🌊",
-      "🏔️",
-      "🌍",
-      "🦋",
-      "🐝",
-      "🌵",
-      "🍁",
-      "🍂",
-      "🌴",
-      "🎄",
-    ],
-  },
-  {
-    label: "Food",
-    emojis: [
-      "🍎",
-      "🍊",
-      "🍋",
-      "🍇",
-      "🍓",
-      "🫐",
-      "🍑",
-      "🥑",
-      "🍕",
-      "🍔",
-      "☕",
-      "🍵",
-      "🧁",
-      "🍰",
-      "🎂",
-      "🍫",
-      "🍿",
-      "🥤",
-      "🍷",
-      "🧃",
-    ],
-  },
-];
+import { useMediaQuery } from "@/lib/use-media-query";
+
+const Picker = dynamic(() => import("emoji-picker-react"), { ssr: false });
 
 export function EmojiPicker({
   onSelect,
@@ -138,7 +16,7 @@ export function EmojiPicker({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [search, setSearch] = useState("");
+  const dark = useMediaQuery("(prefers-color-scheme: dark)", false);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -157,45 +35,27 @@ export function EmojiPicker({
     };
   }, [onClose]);
 
-  const allEmojis = EMOJI_GROUPS.flatMap((g) => g.emojis);
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    onSelect(emojiData.emoji);
+  };
 
   return (
-    <div
-      ref={ref}
-      className="bg-surface-raised border-line absolute z-50 mt-12 w-72 rounded-xl border p-3 shadow-xl"
-      role="dialog"
-      aria-label="Choose an icon"
-    >
-      <div className="mb-2 flex items-center gap-2">
-        <input
-          type="text"
-          placeholder="Search emoji…"
-          value={search}
-          onChange={(e) => setSearch(e.currentTarget.value)}
-          className="border-line bg-surface flex-1 rounded-md border px-2 py-1 text-sm outline-none"
-          autoFocus
-        />
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className="text-ink-muted hover:text-ink text-xs underline underline-offset-4"
-        >
-          Remove
-        </button>
-      </div>
-
-      <div className="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto">
-        {(search ? allEmojis : allEmojis).map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => onSelect(emoji)}
-            className="hover:bg-surface-sunken rounded p-1 text-xl transition-colors"
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
+    <div ref={ref} className="absolute z-50 mt-2">
+      <Picker
+        onEmojiClick={handleEmojiClick}
+        theme={dark ? Theme.DARK : Theme.LIGHT}
+        width={350}
+        height={400}
+        searchPlaceHolder="Search emoji…"
+        previewConfig={{ showPreview: false }}
+      />
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        className="text-ink-muted hover:text-ink bg-surface-raised border-line mt-1 w-full rounded-lg border px-3 py-2 text-xs"
+      >
+        Remove icon
+      </button>
     </div>
   );
 }
