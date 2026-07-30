@@ -106,13 +106,7 @@ export function AppShell({
       <OpenPagesContext.Provider value={{ openPages: effectiveOpenPages, addPage, removePage }}>
         <div className="flex flex-1 overflow-hidden">
           <aside className="border-line hidden w-56 shrink-0 flex-col border-r md:flex">
-            <Nav
-              email={email}
-              todayParam={todayParam}
-              pages={pages}
-              openPages={effectiveOpenPages}
-              removePage={removePage}
-            />
+            <Nav email={email} todayParam={todayParam} pages={pages} />
           </aside>
 
           {open ? (
@@ -131,19 +125,15 @@ export function AppShell({
                 aria-label="Menu"
                 className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r outline-none"
               >
-                <Nav
-                  email={email}
-                  todayParam={todayParam}
-                  pages={pages}
-                  openPages={effectiveOpenPages}
-                  removePage={removePage}
-                  onNavigate={close}
-                />
+                <Nav email={email} todayParam={todayParam} pages={pages} onNavigate={close} />
               </div>
             </div>
           ) : null}
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <TabBar pages={pages} />
+            {children}
+          </div>
         </div>
       </OpenPagesContext.Provider>
     </OpenSidebar.Provider>
@@ -154,15 +144,11 @@ function Nav({
   email,
   todayParam,
   pages,
-  openPages,
-  removePage,
   onNavigate,
 }: {
   email: string;
   todayParam: string;
   pages: SidebarPage[];
-  openPages: string[];
-  removePage: (id: string) => void;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -183,25 +169,22 @@ function Nav({
         </NavLink>
       </nav>
 
-      <PagesSection
-        pages={pages}
-        openPages={openPages}
-        removePage={removePage}
-        onNavigate={onNavigate}
-      />
+      <PagesSection pages={pages} onNavigate={onNavigate} />
 
-      {/* Bottom section: Integrations, theme, account */}
+      {/* Bottom section: theme, integrations, account */}
       <div className="border-line mt-auto border-t pt-4">
-        <NavLink
-          href="/settings/integrations"
-          active={pathname.startsWith("/settings")}
-          onNavigate={onNavigate}
-        >
-          Integrations
-        </NavLink>
-
-        <div className="mt-4">
+        <div className="px-2">
           <ThemeToggle />
+        </div>
+
+        <div className="mt-3">
+          <NavLink
+            href="/settings/integrations"
+            active={pathname.startsWith("/settings")}
+            onNavigate={onNavigate}
+          >
+            Integrations
+          </NavLink>
         </div>
 
         <div className="mt-4 space-y-2">
@@ -222,17 +205,7 @@ function Nav({
   );
 }
 
-function PagesSection({
-  pages,
-  openPages,
-  removePage,
-  onNavigate,
-}: {
-  pages: SidebarPage[];
-  openPages: string[];
-  removePage: (id: string) => void;
-  onNavigate?: () => void;
-}) {
+function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const [expanded, setExpanded] = useState(pathname.startsWith("/pages"));
@@ -247,71 +220,8 @@ function PagesSection({
     });
   };
 
-  // Pages that are open as tabs
-  const openPageItems = pages.filter((p) => openPages.includes(p.id));
-  // All pages for the dropdown
-  const allPages = pages;
-
   return (
     <div className="mt-4 flex min-h-0 flex-col">
-      {/* Open tabs */}
-      {openPageItems.length > 0 ? (
-        <div className="mb-2 flex flex-col gap-0.5">
-          {openPageItems.map((page) => {
-            const active = pathname === `/pages/${page.id}`;
-            return (
-              <div key={page.id} className="group flex items-center">
-                <Link
-                  href={`/pages/${page.id}`}
-                  onClick={onNavigate}
-                  className={cn(
-                    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
-                    active
-                      ? "bg-surface-raised text-ink font-medium"
-                      : "text-ink-muted hover:text-ink",
-                  )}
-                >
-                  <span className="shrink-0 text-sm" aria-hidden>
-                    {page.emoji ?? "📄"}
-                  </span>
-                  <span className="min-w-0 truncate">{page.title || "Untitled"}</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    removePage(page.id);
-                    if (pathname === `/pages/${page.id}`) {
-                      const remaining = openPages.filter((id) => id !== page.id);
-                      if (remaining.length > 0) {
-                        router.push(`/pages/${remaining[remaining.length - 1]}`);
-                      } else {
-                        router.push("/pages");
-                      }
-                      onNavigate?.();
-                    }
-                  }}
-                  aria-label={`Close ${page.title || "Untitled"}`}
-                  className="text-ink-faint hover:text-ink shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <svg
-                    viewBox="0 0 12 12"
-                    className="size-3"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                    aria-hidden
-                  >
-                    <path d="M3 3l6 6M9 3l-6 6" />
-                  </svg>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* All pages dropdown */}
       <div className="flex items-center">
         <button
           type="button"
@@ -354,10 +264,10 @@ function PagesSection({
 
       {expanded ? (
         <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-          {allPages.length === 0 ? (
+          {pages.length === 0 ? (
             <p className="text-ink-faint px-2 py-1 text-xs">No pages yet</p>
           ) : (
-            allPages.map((page) => {
+            pages.map((page) => {
               const active = pathname === `/pages/${page.id}`;
               return (
                 <Link
@@ -381,6 +291,73 @@ function PagesSection({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function TabBar({ pages }: { pages: SidebarPage[] }) {
+  const { openPages, removePage } = useOpenPages();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const tabs = pages.filter((p) => openPages.includes(p.id));
+  if (tabs.length === 0) return null;
+
+  return (
+    <div className="border-line bg-surface-sunken flex shrink-0 items-center gap-0 overflow-x-auto border-b">
+      {tabs.map((page) => {
+        const active = pathname === `/pages/${page.id}`;
+        return (
+          <div
+            key={page.id}
+            className={cn(
+              "group border-line flex max-w-[200px] items-center border-r",
+              active ? "bg-surface" : "hover:bg-surface-raised",
+            )}
+          >
+            <Link
+              href={`/pages/${page.id}`}
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-1.5 px-3 py-1.5 text-xs transition-colors",
+                active ? "text-ink" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              <span className="shrink-0" aria-hidden>
+                {page.emoji ?? "📄"}
+              </span>
+              <span className="min-w-0 truncate">{page.title || "Untitled"}</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                removePage(page.id);
+                if (active) {
+                  const remaining = openPages.filter((id) => id !== page.id);
+                  if (remaining.length > 0) {
+                    router.push(`/pages/${remaining[remaining.length - 1]}`);
+                  } else {
+                    router.push("/pages");
+                  }
+                }
+              }}
+              aria-label={`Close ${page.title || "Untitled"}`}
+              className="text-ink-faint hover:text-ink mr-1 shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              <svg
+                viewBox="0 0 12 12"
+                className="size-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M3 3l6 6M9 3l-6 6" />
+              </svg>
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
