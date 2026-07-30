@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { PageDocument } from "@/app/api/pages/[id]/body/route";
 import { useBodyAutosave, type SaveState } from "@/components/editor/use-body-autosave";
 import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/pages";
+import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
 
 import { EmojiPicker } from "./emoji-picker";
@@ -71,7 +72,12 @@ export function PageDetail({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-[900px] px-6 pt-16 pb-24 sm:px-24">
+      {/* Mobile menu trigger — small, top-left, doesn't take up page space */}
+      <div className="sticky top-0 z-10 flex items-center px-4 pt-3 md:hidden">
+        <SidebarTrigger />
+      </div>
+
+      <div className="mx-auto w-full max-w-[900px] px-6 pt-8 pb-24 sm:px-24 md:pt-16">
         {/* Emoji icon — click to change */}
         <div className="relative mb-4">
           <button

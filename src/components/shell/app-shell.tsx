@@ -18,14 +18,6 @@ import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 
-/**
- * Lets the toolbar open the drawer without the layout reaching into the page.
- *
- * The trigger has to sit *inside* the toolbar row — a phone screen showing a
- * calendar cannot spare a second bar just to hold a hamburger — but the toolbar
- * is rendered by the page, two trees away from the state. A no-op default keeps
- * the button harmless if it is ever rendered outside this shell.
- */
 const OpenSidebar = createContext<() => void>(() => {});
 
 export function SidebarTrigger() {
@@ -55,6 +47,17 @@ export function SidebarTrigger() {
 
 export type SidebarPage = { id: string; title: string; emoji: string | null };
 
+/** IDs of pages the user has visited this session, shown as tabs. */
+const OpenPagesContext = createContext<{
+  openPages: string[];
+  addPage: (id: string) => void;
+  removePage: (id: string) => void;
+}>({ openPages: [], addPage: () => {}, removePage: () => {} });
+
+export function useOpenPages() {
+  return useContext(OpenPagesContext);
+}
+
 export function AppShell({
   email,
   todayParam,
@@ -62,7 +65,6 @@ export function AppShell({
   children,
 }: {
   email: string;
-  /** `yyyy-MM-dd` for today, resolved on the server so rendering stays pure. */
   todayParam: string;
   pages: SidebarPage[];
   children: React.ReactNode;
@@ -71,6 +73,22 @@ export function AppShell({
   const close = useCallback(() => setOpen(false), []);
   const openMenu = useCallback(() => setOpen(true), []);
   const panel = useRef<HTMLDivElement>(null);
+
+  const pathname = usePathname();
+  const [openPages, setOpenPages] = useState<string[]>([]);
+
+  // Derive the current page ID from the URL so it always appears as a tab.
+  const currentPageId = pathname.startsWith("/pages/") ? pathname.split("/")[2] : null;
+  const effectiveOpenPages =
+    currentPageId && !openPages.includes(currentPageId) ? [...openPages, currentPageId] : openPages;
+
+  const addPage = useCallback((id: string) => {
+    setOpenPages((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const removePage = useCallback((id: string) => {
+    setOpenPages((prev) => prev.filter((p) => p !== id));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -85,56 +103,66 @@ export function AppShell({
 
   return (
     <OpenSidebar.Provider value={openMenu}>
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="border-line hidden w-56 shrink-0 flex-col border-r p-4 md:flex">
-          <Nav email={email} todayParam={todayParam} pages={pages} />
-        </aside>
-
-        {open ? (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <button
-              type="button"
-              aria-label="Close menu"
-              className="absolute inset-0 bg-black/40"
-              onClick={close}
+      <OpenPagesContext.Provider value={{ openPages: effectiveOpenPages, addPage, removePage }}>
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="border-line hidden w-56 shrink-0 flex-col border-r md:flex">
+            <Nav
+              email={email}
+              todayParam={todayParam}
+              pages={pages}
+              openPages={effectiveOpenPages}
+              removePage={removePage}
             />
-            <div
-              ref={panel}
-              tabIndex={-1}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Menu"
-              className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r p-4 outline-none"
-            >
-              <Nav email={email} todayParam={todayParam} pages={pages} onNavigate={close} />
-            </div>
-          </div>
-        ) : null}
+          </aside>
 
-        {/* `min-h-0` is load-bearing: without it a flex child refuses to shrink
-            below its content height, so the grid's inner scroll never engages. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-      </div>
+          {open ? (
+            <div className="fixed inset-0 z-40 md:hidden">
+              <button
+                type="button"
+                aria-label="Close menu"
+                className="absolute inset-0 bg-black/40"
+                onClick={close}
+              />
+              <div
+                ref={panel}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Menu"
+                className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r outline-none"
+              >
+                <Nav
+                  email={email}
+                  todayParam={todayParam}
+                  pages={pages}
+                  openPages={effectiveOpenPages}
+                  removePage={removePage}
+                  onNavigate={close}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+      </OpenPagesContext.Provider>
     </OpenSidebar.Provider>
   );
 }
 
-/**
- * The same rail in both places, stacked from the top.
- *
- * It used to push the theme toggle and sign-out to the bottom edge with
- * `justify-between`, which read as two unrelated menus on a tall screen. One
- * column, rules between groups, and nothing floating a viewport away.
- */
 function Nav({
   email,
   todayParam,
   pages,
+  openPages,
+  removePage,
   onNavigate,
 }: {
   email: string;
   todayParam: string;
   pages: SidebarPage[];
+  openPages: string[];
+  removePage: (id: string) => void;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -142,7 +170,7 @@ function Nav({
   const calendarHref = `/calendar/${wide ? "3day" : "day"}/${todayParam}`;
 
   return (
-    <>
+    <div className="flex flex-1 flex-col overflow-hidden p-4">
       <span className="px-2 text-sm font-semibold tracking-tight">Timeblock</span>
 
       <nav className="mt-6 flex flex-col gap-0.5">
@@ -153,6 +181,17 @@ function Nav({
         >
           Calendar
         </NavLink>
+      </nav>
+
+      <PagesSection
+        pages={pages}
+        openPages={openPages}
+        removePage={removePage}
+        onNavigate={onNavigate}
+      />
+
+      {/* Bottom section: Integrations, theme, account */}
+      <div className="border-line mt-auto border-t pt-4">
         <NavLink
           href="/settings/integrations"
           active={pathname.startsWith("/settings")}
@@ -160,32 +199,40 @@ function Nav({
         >
           Integrations
         </NavLink>
-      </nav>
 
-      <PagesSection pages={pages} onNavigate={onNavigate} />
+        <div className="mt-4">
+          <ThemeToggle />
+        </div>
 
-      <div className="border-line mt-6 border-t pt-6">
-        <ThemeToggle />
+        <div className="mt-4 space-y-2">
+          <p className="text-ink-muted truncate px-2 text-xs" title={email}>
+            {email}
+          </p>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="text-ink-muted hover:text-ink px-2 text-xs underline-offset-4 transition-colors hover:underline"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </div>
-
-      <div className="border-line mt-6 space-y-2 border-t pt-6">
-        <p className="text-ink-muted truncate px-2 text-xs" title={email}>
-          {email}
-        </p>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="text-ink-muted hover:text-ink px-2 text-xs underline-offset-4 transition-colors hover:underline"
-          >
-            Sign out
-          </button>
-        </form>
-      </div>
-    </>
+    </div>
   );
 }
 
-function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?: () => void }) {
+function PagesSection({
+  pages,
+  openPages,
+  removePage,
+  onNavigate,
+}: {
+  pages: SidebarPage[];
+  openPages: string[];
+  removePage: (id: string) => void;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [expanded, setExpanded] = useState(pathname.startsWith("/pages"));
@@ -200,8 +247,71 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
     });
   };
 
+  // Pages that are open as tabs
+  const openPageItems = pages.filter((p) => openPages.includes(p.id));
+  // All pages for the dropdown
+  const allPages = pages;
+
   return (
-    <div className="mt-4">
+    <div className="mt-4 flex min-h-0 flex-col">
+      {/* Open tabs */}
+      {openPageItems.length > 0 ? (
+        <div className="mb-2 flex flex-col gap-0.5">
+          {openPageItems.map((page) => {
+            const active = pathname === `/pages/${page.id}`;
+            return (
+              <div key={page.id} className="group flex items-center">
+                <Link
+                  href={`/pages/${page.id}`}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active
+                      ? "bg-surface-raised text-ink font-medium"
+                      : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  <span className="shrink-0 text-sm" aria-hidden>
+                    {page.emoji ?? "📄"}
+                  </span>
+                  <span className="min-w-0 truncate">{page.title || "Untitled"}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    removePage(page.id);
+                    if (pathname === `/pages/${page.id}`) {
+                      const remaining = openPages.filter((id) => id !== page.id);
+                      if (remaining.length > 0) {
+                        router.push(`/pages/${remaining[remaining.length - 1]}`);
+                      } else {
+                        router.push("/pages");
+                      }
+                      onNavigate?.();
+                    }
+                  }}
+                  aria-label={`Close ${page.title || "Untitled"}`}
+                  className="text-ink-faint hover:text-ink shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <svg
+                    viewBox="0 0 12 12"
+                    className="size-3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    aria-hidden
+                  >
+                    <path d="M3 3l6 6M9 3l-6 6" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* All pages dropdown */}
       <div className="flex items-center">
         <button
           type="button"
@@ -219,7 +329,7 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
           >
             <path d="M6 4l4 4-4 4" />
           </svg>
-          Pages
+          All Pages
         </button>
         <button
           type="button"
@@ -243,11 +353,11 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
       </div>
 
       {expanded ? (
-        <div className="mt-1 flex flex-col gap-0.5">
-          {pages.length === 0 ? (
+        <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+          {allPages.length === 0 ? (
             <p className="text-ink-faint px-2 py-1 text-xs">No pages yet</p>
           ) : (
-            pages.map((page) => {
+            allPages.map((page) => {
               const active = pathname === `/pages/${page.id}`;
               return (
                 <Link
@@ -255,7 +365,7 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
                   href={`/pages/${page.id}`}
                   onClick={onNavigate}
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    "flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
                     active
                       ? "bg-surface-raised text-ink font-medium"
                       : "text-ink-muted hover:text-ink",
@@ -290,9 +400,6 @@ function NavLink({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      // Closing on click rather than on a pathname effect: the drawer should
-      // shut when the user chooses something, including a link back to the page
-      // they are already on, which a route change would never report.
       onClick={onNavigate}
       className={cn(
         "rounded-md px-2 py-1.5 text-sm transition-colors",
