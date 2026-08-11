@@ -3,7 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-import { publicEnv } from "@/env";
 import { createClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -17,7 +16,12 @@ export function LoginForm() {
     setError(null);
 
     const next = searchParams.get("next") ?? "/";
-    const callback = new URL("/auth/callback", publicEnv.appUrl);
+    // The origin we are actually being viewed on, not `publicEnv.appUrl`. That
+    // var is the *deployed* address — it is what Google's webhook and the
+    // Calendar OAuth redirect must resolve to, so `.env.local` legitimately
+    // points it at production. Building the sign-in callback from it too meant
+    // signing in on localhost bounced you to the deployed app.
+    const callback = new URL("/auth/callback", window.location.origin);
     callback.searchParams.set("next", next);
 
     const supabase = createClient();
