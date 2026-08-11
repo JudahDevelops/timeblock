@@ -29,17 +29,22 @@ export function FieldRow({
   now,
   onDragStart,
   dragging,
+  pending,
 }: {
   field: DashboardField;
   now: Date;
   onDragStart?: (event: React.PointerEvent) => void;
   dragging?: boolean;
+  /** Drawn but not yet inserted: visible, and inert until it has a real id. */
+  pending?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
   const invalidate = useInvalidateDashboards();
   const [label, setLabel] = useState(field.label);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Gone from the list the instant it is clicked; back if the delete fails. */
+  const [deleted, setDeleted] = useState(false);
 
   // The server row is the truth. When it changes underneath — another tab, a
   // rollback — the input follows it, unless the user is mid-edit in this one.
@@ -60,13 +65,24 @@ export function FieldRow({
         toast("Could not save that change.");
       });
 
+  // After every hook, never before — hook order has to stay unconditional.
+  if (deleted) return null;
+
   return (
     <li
       data-field-id={field.id}
       className={cn(
-        "border-line bg-surface group relative rounded-lg border px-3 py-2.5 transition-shadow",
-        dragging && "opacity-50",
+        // `surface-raised`, not `surface-sunken`: sunken is identical to surface
+        // in the dark palette, so hovering a row there changed nothing at all.
+        "border-line bg-surface group relative rounded-lg border px-3 py-2.5",
+        // `ink-faint` on hover matches the Add-field button's border treatment.
+        "hover:border-ink-faint hover:bg-surface-raised transition-colors",
+        dragging && "border-ink-faint bg-surface-raised opacity-60 shadow-lg",
+        // Inert while inserting: pointer events off is what stops a click from
+        // naming a row id that does not exist on the server yet.
+        pending && "pointer-events-none opacity-60",
       )}
+      aria-busy={pending || undefined}
     >
       <div className="flex items-center gap-2">
         {onDragStart ? (
@@ -126,10 +142,18 @@ export function FieldRow({
         <button
           type="button"
           onClick={() => {
+            // Drawn gone before the write, like every grid mutation. The row is
+            // restored rather than left in limbo if the server refuses.
+            setDeleted(true);
             void deleteField(field.id)
-              .then(invalidate)
-              .catch(() => toast("Could not delete that field."))
-              .finally(() => router.refresh());
+              .then(() => {
+                invalidate();
+                router.refresh();
+              })
+              .catch(() => {
+                setDeleted(false);
+                toast("Could not delete that field.");
+              });
           }}
           aria-label={`Delete ${field.label || "field"}`}
           className="text-ink-faint hover:text-danger shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
@@ -408,7 +432,10 @@ function ListInput({
       {items.length > 0 ? (
         <ul className="mb-1.5 space-y-0.5">
           {items.map((item, index) => (
-            <li key={`${item}-${index}`} className="group/item flex items-center gap-2">
+            <li
+              key={`${item}-${index}`}
+              className="group/item hover:bg-surface-raised -mx-1 flex items-center gap-2 rounded px-1 py-0.5 transition-colors"
+            >
               <span aria-hidden className="text-ink-faint shrink-0 text-xs">
                 ·
               </span>
@@ -417,7 +444,7 @@ function ListInput({
                 type="button"
                 aria-label={`Remove ${item}`}
                 onClick={() => commit(items.filter((_, i) => i !== index))}
-                className="text-ink-faint hover:text-danger shrink-0 text-xs opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100"
+                className="text-ink-faint hover:text-danger shrink-0 rounded px-1 text-xs opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100"
               >
                 ✕
               </button>
