@@ -1,5 +1,6 @@
 "use client";
 
+import { STATUS_HOTKEY_LABEL } from "@/lib/hotkeys";
 import type { StatusView } from "@/lib/status/resolve";
 import { formatDuration } from "@/lib/status/format";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ export function StatusHud({ view, onOpen }: { view: StatusView; onOpen: () => vo
       className="border-line bg-surface hover:bg-surface-sunken flex w-full shrink-0 items-center gap-3 border-t px-4 py-2 text-left text-sm transition-colors"
     >
       <Summary view={view} />
-      <kbd className="text-ink-faint hidden shrink-0 text-xs sm:inline">⌘.</kbd>
+      <kbd className="text-ink-faint hidden shrink-0 text-xs sm:inline">{STATUS_HOTKEY_LABEL}</kbd>
     </button>
   );
 }

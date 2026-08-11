@@ -7,6 +7,7 @@ import { format } from "date-fns";
 
 import type { SearchResult } from "@/app/api/search/route";
 import { calendarPath, type CalendarView } from "@/lib/date";
+import { isSearchHotkey, SEARCH_HOTKEY_LABEL } from "@/lib/hotkeys";
 import { HIGHLIGHT_END, HIGHLIGHT_START } from "@/lib/search/highlight";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,7 @@ export function CommandPalette({ view }: { view: CalendarView }) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "k" || !(event.metaKey || event.ctrlKey)) return;
+      if (!isSearchHotkey(event)) return;
       event.preventDefault();
       setOpen((current) => !current);
     }
@@ -48,6 +49,9 @@ export function CommandPalette({ view }: { view: CalendarView }) {
         {/* The magnifier alone is unambiguous, and the word is what pushes the
             toolbar past a phone's width. */}
         <span className="hidden sm:inline">Search</span>
+        {/* Only on a wide screen: a shortcut nobody can press on a phone is
+            furniture, and this one is long enough to crowd the toolbar. */}
+        <kbd className="text-ink-faint hidden lg:inline">{SEARCH_HOTKEY_LABEL}</kbd>
       </button>
 
       {/* Unmounted while closed, so every open starts from a blank query and

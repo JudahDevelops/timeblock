@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { isStatusHotkey } from "@/lib/hotkeys";
+
 import { PauseMenu } from "./pause-menu";
 import { StatusHud } from "./status-hud";
 import { useNow, useStatus } from "./use-status";
@@ -22,9 +24,10 @@ export function StatusWindow() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // A modifier means no typing-guard is needed, the same reason ⌘K is safe
-      // to register globally while the toolbar's bare keys are not.
-      if (event.key !== "." || !(event.metaKey || event.ctrlKey)) return;
+      // Modifiers mean no typing-guard is needed, the same reason the search
+      // palette is safe to register globally while the toolbar's bare keys
+      // are not. See `hotkeys.ts` for why it is Ctrl+Shift and not Cmd.
+      if (!isStatusHotkey(event)) return;
       event.preventDefault();
       setOpen((current) => !current);
     }
