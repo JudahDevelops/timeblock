@@ -36,6 +36,13 @@
       "when": 1785435791388,
       "tag": "0004_panoramic_valkyrie",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786476301323,
+      "tag": "0005_lush_snowbird",
+      "breakpoints": true
     }
   ]
 }

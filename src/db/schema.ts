@@ -281,6 +281,83 @@ export const pages = pgTable(
   ],
 );
 
+/**
+ * A user-defined tracker. Deliberately knows nothing about time or calendars:
+ * this is the "how am I doing generally" surface, where events are the "what is
+ * happening now" one. Money, exercise and people are all just dashboards.
+ */
+export const dashboards = pgTable(
+  "dashboards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+
+    name: text("name").notNull().default(""),
+    /** A single emoji beside the name, matching how `pages` are labelled. */
+    emoji: text("emoji"),
+
+    /** Manual ordering, which is also the tab order in the pause menu. */
+    position: integer("position").notNull().default(0),
+
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("dashboards_user_idx").on(t.userId, t.position)],
+);
+
+/**
+ * One field on a dashboard.
+ *
+ * `kind` is the union tag from `src/lib/dashboard/field.ts`, stored as free text
+ * rather than a pg enum so adding a type is a code change and not a migration that
+ * has to lock the table.
+ *
+ * `config` and `value` are separate columns for the same reason they are separate
+ * in the type: editing a target must not rewrite the reading, and clearing a
+ * reading must not lose the unit.
+ *
+ * The `grid_*` columns are written from day one even though phase 2a renders a
+ * single ordered column. Carrying them now makes the free-form grid a rendering
+ * change later rather than a migration against live data.
+ */
+export const dashboardFields = pgTable(
+  "dashboard_fields",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    dashboardId: uuid("dashboard_id")
+      .notNull()
+      .references(() => dashboards.id, { onDelete: "cascade" }),
+    /** Denormalised from the parent so every query can scope on it directly. */
+    userId: uuid("user_id").notNull(),
+
+    label: text("label").notNull().default(""),
+    kind: text("kind").notNull(),
+
+    /** Per-kind settings: unit, prefix, target. Never the reading itself. */
+    config: jsonb("config")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** The current reading. Shape depends on `kind`; parsed at the boundary. */
+    value: jsonb("value"),
+
+    position: integer("position").notNull().default(0),
+
+    gridX: integer("grid_x").notNull().default(0),
+    gridY: integer("grid_y").notNull().default(0),
+    gridW: integer("grid_w").notNull().default(3),
+    gridH: integer("grid_h").notNull().default(1),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("dashboard_fields_dashboard_idx").on(t.dashboardId, t.position),
+    index("dashboard_fields_user_idx").on(t.userId),
+  ],
+);
+
 export type Event = typeof events.$inferSelect;
 export type NewEvent = typeof events.$inferInsert;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
@@ -289,3 +366,6 @@ export type EventLink = typeof eventLinks.$inferSelect;
 export type SyncJob = typeof syncJobs.$inferSelect;
 export type Page = typeof pages.$inferSelect;
 export type NewPage = typeof pages.$inferInsert;
+export type Dashboard = typeof dashboards.$inferSelect;
+export type NewDashboard = typeof dashboards.$inferInsert;
+export type DashboardFieldRow = typeof dashboardFields.$inferSelect;

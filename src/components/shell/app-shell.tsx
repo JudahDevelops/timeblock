@@ -14,6 +14,7 @@ import {
 
 import { signOut } from "@/server/actions/auth";
 import { createPage, deletePage } from "@/server/actions/pages";
+import { StatusWindow } from "@/components/status/status-window";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -102,7 +103,10 @@ export function AppShell({
           </div>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {children}
+          <StatusWindow />
+        </div>
       </div>
     </OpenSidebar.Provider>
   );
@@ -134,6 +138,13 @@ function Nav({
           onNavigate={onNavigate}
         >
           Calendar
+        </NavLink>
+        <NavLink
+          href="/dashboards"
+          active={pathname.startsWith("/dashboards")}
+          onNavigate={onNavigate}
+        >
+          Dashboards
         </NavLink>
       </nav>
 

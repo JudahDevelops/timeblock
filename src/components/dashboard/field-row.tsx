@@ -1,0 +1,538 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+
+import { useToast } from "@/components/shell/toast";
+import {
+  formatNumber,
+  formatRelativeDate,
+  MAX_LIST_ITEMS,
+  progressFraction,
+  type DashboardField,
+} from "@/lib/dashboard/field";
+import { deleteField, updateField } from "@/server/actions/dashboards";
+import { cn } from "@/lib/utils";
+
+import { useInvalidateDashboards } from "./use-dashboards";
+
+/**
+ * One editable field.
+ *
+ * Writes follow the grid's rule rather than awaiting anything: the input already
+ * shows what the user typed, the action is fired without `await`, and a failure
+ * rolls the input back and says so. Nothing here blocks a keystroke on a
+ * transatlantic round trip.
+ */
+export function FieldRow({
+  field,
+  now,
+  onDragStart,
+  dragging,
+}: {
+  field: DashboardField;
+  now: Date;
+  onDragStart?: (event: React.PointerEvent) => void;
+  dragging?: boolean;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const invalidate = useInvalidateDashboards();
+  const [label, setLabel] = useState(field.label);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // The server row is the truth. When it changes underneath — another tab, a
+  // rollback — the input follows it, unless the user is mid-edit in this one.
+  const labelRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (document.activeElement !== labelRef.current) setLabel(field.label);
+  }, [field.label]);
+
+  const save = (
+    patch: { label?: string; value?: unknown; config?: unknown },
+    rollback: () => void,
+  ) =>
+    void updateField({ id: field.id, ...patch })
+      .then(invalidate)
+      .catch(() => {
+        rollback();
+        router.refresh();
+        toast("Could not save that change.");
+      });
+
+  return (
+    <li
+      data-field-id={field.id}
+      className={cn(
+        "border-line bg-surface group relative rounded-lg border px-3 py-2.5 transition-shadow",
+        dragging && "opacity-50",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        {onDragStart ? (
+          <button
+            type="button"
+            aria-label={`Reorder ${field.label || "field"}`}
+            onPointerDown={onDragStart}
+            className="text-ink-faint hover:text-ink-muted -ml-1 shrink-0 cursor-grab touch-none p-1 transition-colors"
+          >
+            <svg viewBox="0 0 16 16" className="size-3.5" fill="currentColor" aria-hidden>
+              <circle cx="6" cy="4" r="1.2" />
+              <circle cx="10" cy="4" r="1.2" />
+              <circle cx="6" cy="8" r="1.2" />
+              <circle cx="10" cy="8" r="1.2" />
+              <circle cx="6" cy="12" r="1.2" />
+              <circle cx="10" cy="12" r="1.2" />
+            </svg>
+          </button>
+        ) : null}
+
+        <input
+          ref={labelRef}
+          value={label}
+          placeholder="Untitled field"
+          aria-label="Field label"
+          onChange={(event) => setLabel(event.target.value)}
+          onBlur={() => {
+            if (label === field.label) return;
+            const previous = field.label;
+            save({ label }, () => setLabel(previous));
+          }}
+          className="text-ink-muted placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-xs font-medium tracking-wide uppercase outline-none"
+        />
+
+        {field.kind === "number" || field.kind === "progress" ? (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-label="Field settings"
+            aria-expanded={settingsOpen}
+            className="text-ink-faint hover:text-ink shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <svg
+              viewBox="0 0 16 16"
+              className="size-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              aria-hidden
+            >
+              <circle cx="8" cy="8" r="2" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
+            </svg>
+          </button>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => {
+            void deleteField(field.id)
+              .then(invalidate)
+              .catch(() => toast("Could not delete that field."))
+              .finally(() => router.refresh());
+          }}
+          aria-label={`Delete ${field.label || "field"}`}
+          className="text-ink-faint hover:text-danger shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M6.67 7.33v4M9.33 7.33v4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="mt-1.5">
+        <FieldValueEditor field={field} now={now} save={save} />
+      </div>
+
+      {settingsOpen ? <FieldSettings field={field} save={save} /> : null}
+    </li>
+  );
+}
+
+type Save = (
+  patch: { label?: string; value?: unknown; config?: unknown },
+  rollback: () => void,
+) => void;
+
+/** The value affordance, chosen by kind — the whole point of picking a type. */
+function FieldValueEditor({ field, now, save }: { field: DashboardField; now: Date; save: Save }) {
+  switch (field.kind) {
+    case "number":
+      return <NumberInput field={field} save={save} />;
+    case "progress":
+      return <ProgressInput field={field} save={save} />;
+    case "text":
+      return <TextInput field={field} save={save} />;
+    case "date":
+      return <DateInput field={field} now={now} save={save} />;
+    case "checkbox":
+      return <CheckboxInput field={field} save={save} />;
+    case "list":
+      return <ListInput field={field} save={save} />;
+  }
+}
+
+function NumberInput({
+  field,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "number" }>;
+  save: Save;
+}) {
+  const [draft, setDraft] = useState(field.value === null ? "" : String(field.value));
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (document.activeElement !== input.current) {
+      setDraft(field.value === null ? "" : String(field.value));
+    }
+  }, [field.value]);
+
+  const { prefix, suffix } = field.config;
+
+  return (
+    <div className="flex items-baseline gap-1">
+      {prefix ? <span className="text-ink-muted shrink-0 text-lg">{prefix}</span> : null}
+      <input
+        ref={input}
+        value={draft}
+        inputMode="decimal"
+        placeholder="—"
+        aria-label={field.label || "Value"}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const previous = field.value === null ? "" : String(field.value);
+          if (draft === previous) return;
+          save({ value: draft }, () => setDraft(previous));
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-lg font-semibold tabular-nums outline-none"
+      />
+      {suffix ? <span className="text-ink-muted shrink-0 text-sm">{suffix}</span> : null}
+    </div>
+  );
+}
+
+function ProgressInput({
+  field,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "progress" }>;
+  save: Save;
+}) {
+  const [draft, setDraft] = useState(field.value === null ? "" : String(field.value));
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (document.activeElement !== input.current) {
+      setDraft(field.value === null ? "" : String(field.value));
+    }
+  }, [field.value]);
+
+  const fraction = progressFraction(field);
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-1">
+        <input
+          ref={input}
+          value={draft}
+          inputMode="decimal"
+          placeholder="—"
+          aria-label={field.label || "Value"}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            const previous = field.value === null ? "" : String(field.value);
+            if (draft === previous) return;
+            save({ value: draft }, () => setDraft(previous));
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          className="text-ink placeholder:text-ink-faint w-20 min-w-0 bg-transparent text-lg font-semibold tabular-nums outline-none"
+        />
+        <span className="text-ink-faint shrink-0 text-sm tabular-nums">
+          / {formatNumber(field.config.target)}
+          {field.config.suffix ? ` ${field.config.suffix}` : ""}
+        </span>
+        <span className="text-ink-muted ml-auto shrink-0 text-xs tabular-nums">
+          {Math.round(fraction * 100)}%
+        </span>
+      </div>
+
+      {/* Shape first: the bar is what is read, the percentage only confirms it. */}
+      <div
+        className="bg-surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full"
+        role="progressbar"
+        aria-valuenow={Math.round(fraction * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={field.label || "Progress"}
+      >
+        <div
+          className="bg-now h-full rounded-full transition-[width] duration-300"
+          style={{ width: `${fraction * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TextInput({
+  field,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "text" }>;
+  save: Save;
+}) {
+  const [draft, setDraft] = useState(field.value ?? "");
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (document.activeElement !== input.current) setDraft(field.value ?? "");
+  }, [field.value]);
+
+  return (
+    <input
+      ref={input}
+      value={draft}
+      placeholder="—"
+      aria-label={field.label || "Value"}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        const previous = field.value ?? "";
+        if (draft === previous) return;
+        save({ value: draft }, () => setDraft(previous));
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      className="text-ink placeholder:text-ink-faint w-full bg-transparent text-base outline-none"
+    />
+  );
+}
+
+function DateInput({
+  field,
+  now,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "date" }>;
+  now: Date;
+  save: Save;
+}) {
+  return (
+    <div className="flex items-baseline gap-3">
+      {/* The relative reading is the value; the picker is how you change it. */}
+      <span className="text-ink shrink-0 text-lg font-semibold">
+        {field.value ? formatRelativeDate(field.value, now) : "—"}
+      </span>
+      <input
+        type="date"
+        value={field.value ?? ""}
+        aria-label={field.label || "Date"}
+        onChange={(event) => {
+          const next = event.target.value || null;
+          save({ value: next }, () => {});
+        }}
+        className="text-ink-faint hover:text-ink-muted ml-auto min-w-0 bg-transparent text-xs transition-colors outline-none"
+      />
+    </div>
+  );
+}
+
+function CheckboxInput({
+  field,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "checkbox" }>;
+  save: Save;
+}) {
+  /**
+   * The box the user clicked, held only until the server row agrees.
+   *
+   * A checkbox has nothing half-typed to protect, so the prop stays the truth and
+   * this is a pure override rather than a copy kept in sync by an effect — which
+   * is what `react-hooks/set-state-in-effect` exists to prevent.
+   */
+  const [pending, setPending] = useState<{ from: boolean | null; to: boolean } | null>(null);
+
+  const server = field.value ?? false;
+  const checked = pending && pending.from === field.value ? pending.to : server;
+
+  return (
+    <label className="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => {
+          const next = event.target.checked;
+          setPending({ from: field.value, to: next });
+          save({ value: next }, () => setPending(null));
+        }}
+        className="accent-now size-4 cursor-pointer"
+      />
+      <span className={cn("text-base", checked ? "text-ink" : "text-ink-muted")}>
+        {checked ? "Done" : "Not done"}
+      </span>
+    </label>
+  );
+}
+
+function ListInput({
+  field,
+  save,
+}: {
+  field: Extract<DashboardField, { kind: "list" }>;
+  save: Save;
+}) {
+  const items = field.value ?? [];
+  const [entry, setEntry] = useState("");
+
+  const commit = (next: string[]) => {
+    save({ value: next }, () => {});
+  };
+
+  return (
+    <div>
+      {items.length > 0 ? (
+        <ul className="mb-1.5 space-y-0.5">
+          {items.map((item, index) => (
+            <li key={`${item}-${index}`} className="group/item flex items-center gap-2">
+              <span aria-hidden className="text-ink-faint shrink-0 text-xs">
+                ·
+              </span>
+              <span className="text-ink min-w-0 flex-1 truncate text-sm">{item}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${item}`}
+                onClick={() => commit(items.filter((_, i) => i !== index))}
+                className="text-ink-faint hover:text-danger shrink-0 text-xs opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {items.length < MAX_LIST_ITEMS ? (
+        <input
+          value={entry}
+          placeholder="Add an item…"
+          aria-label={`Add to ${field.label || "list"}`}
+          onChange={(event) => setEntry(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            const trimmed = entry.trim();
+            if (!trimmed) return;
+            event.preventDefault();
+            // Cleared straight away so the next item can be typed immediately,
+            // rather than waiting for the server to confirm the previous one.
+            setEntry("");
+            commit([...items, trimmed]);
+          }}
+          className="text-ink placeholder:text-ink-faint w-full bg-transparent text-sm outline-none"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Unit, prefix and target. Tucked behind a toggle: set once, then rarely touched. */
+function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
+  if (field.kind === "number") {
+    return (
+      <div className="border-line-soft mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
+        <SettingInput
+          label="Prefix"
+          defaultValue={field.config.prefix ?? ""}
+          placeholder="$"
+          onCommit={(value) => save({ config: { ...field.config, prefix: value } }, () => {})}
+        />
+        <SettingInput
+          label="Unit"
+          defaultValue={field.config.suffix ?? ""}
+          placeholder="kg"
+          onCommit={(value) => save({ config: { ...field.config, suffix: value } }, () => {})}
+        />
+        <SettingInput
+          label="Decimals"
+          defaultValue={field.config.decimals === undefined ? "" : String(field.config.decimals)}
+          placeholder="0"
+          onCommit={(value) =>
+            save(
+              { config: { ...field.config, decimals: value === "" ? undefined : Number(value) } },
+              () => {},
+            )
+          }
+        />
+      </div>
+    );
+  }
+
+  if (field.kind === "progress") {
+    return (
+      <div className="border-line-soft mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
+        <SettingInput
+          label="Target"
+          defaultValue={String(field.config.target)}
+          placeholder="100"
+          onCommit={(value) =>
+            save({ config: { ...field.config, target: Number(value) } }, () => {})
+          }
+        />
+        <SettingInput
+          label="Unit"
+          defaultValue={field.config.suffix ?? ""}
+          placeholder="km"
+          onCommit={(value) => save({ config: { ...field.config, suffix: value } }, () => {})}
+        />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function SettingInput({
+  label,
+  defaultValue,
+  placeholder,
+  onCommit,
+}: {
+  label: string;
+  defaultValue: string;
+  placeholder: string;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(defaultValue);
+
+  return (
+    <label className="flex items-center gap-1.5">
+      <span className="text-ink-faint text-xs">{label}</span>
+      <input
+        value={draft}
+        placeholder={placeholder}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft !== defaultValue) onCommit(draft.trim());
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="border-line text-ink placeholder:text-ink-faint w-16 rounded border bg-transparent px-1.5 py-0.5 text-xs outline-none"
+      />
+    </label>
+  );
+}

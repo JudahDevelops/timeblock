@@ -44,6 +44,24 @@ create policy pages_owner on public.pages
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+alter table public.dashboards enable row level security;
+drop policy if exists dashboards_owner on public.dashboards;
+create policy dashboards_owner on public.dashboards
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- `dashboard_fields` carries a denormalised `user_id` precisely so this policy can
+-- be a column comparison rather than a subquery back to the parent dashboard.
+alter table public.dashboard_fields enable row level security;
+drop policy if exists dashboard_fields_owner on public.dashboard_fields;
+create policy dashboard_fields_owner on public.dashboard_fields
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 alter table public.sync_conflicts enable row level security;
 drop policy if exists sync_conflicts_owner on public.sync_conflicts;
 create policy sync_conflicts_owner on public.sync_conflicts
