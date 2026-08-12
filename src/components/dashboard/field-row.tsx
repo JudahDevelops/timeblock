@@ -190,7 +190,9 @@ export function FieldRow({
         <FieldValueEditor field={field} now={now} save={save} />
       </div>
 
-      {settingsOpen ? <FieldSettings field={field} save={save} /> : null}
+      {settingsOpen ? (
+        <FieldSettings field={field} save={save} onClose={() => setSettingsOpen(false)} />
+      ) : null}
 
       {resizable && onResizeStart ? (
         <button
@@ -552,12 +554,52 @@ function ListInput({
  * Size, unit, prefix and target. Tucked behind a toggle: set once, then rarely
  * touched. Size comes first because every kind has one, and the rest are the
  * per-kind extras layered after it.
+ *
+ * Laid over the card rather than appended below it. The card's height is set by
+ * the grid, in whole rows, and it clips — so a panel in the normal flow was
+ * pushed straight past the bottom edge and cut off, with the settings that
+ * happened to be last unreachable at any field size. Overlaying means the panel
+ * is bounded by the card instead of by whatever room the value left over, and it
+ * scrolls inside that bound when even the whole card is not tall enough.
  */
-function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
+function FieldSettings({
+  field,
+  save,
+  onClose,
+}: {
+  field: DashboardField;
+  save: Save;
+  onClose: () => void;
+}) {
   return (
-    <div className="border-line-soft mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-2">
-      <ScalePicker field={field} save={save} />
-      <KindSettings field={field} save={save} />
+    <div className="bg-surface-raised border-line-soft absolute inset-x-0 bottom-0 z-10 max-h-full overflow-y-auto border-t px-3 py-2 shadow-lg">
+      <div className="flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+          <ScalePicker field={field} save={save} />
+          <KindSettings field={field} save={save} />
+        </div>
+
+        {/* The gear that opened this is behind the panel on a short field, so
+            closing it needs its own way out. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close field settings"
+          className="text-ink-faint hover:text-ink shrink-0 p-0.5 transition-colors"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
