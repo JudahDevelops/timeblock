@@ -93,7 +93,11 @@ export function PauseMenu({
         }}
         className="border-line bg-surface relative flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border shadow-2xl outline-none"
       >
-        <div className="border-line flex shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
+        {/* `no-scrollbar`, not `overflow-x-visible`: the strip must still scroll
+            when there are more dashboards than fit. It just must not show a bar
+            to do it — the tabs are 1px taller than their box, so `auto` reserved
+            a full horizontal gutter for an overflow nobody can see or use. */}
+        <div className="border-line no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
           {tabs.map((entry) => (
             <button
               key={entry.id}
@@ -319,13 +323,17 @@ function NowTab({ view }: { view: StatusView }) {
 
       <Section bordered>
         <div className="flex items-center justify-between gap-3">
-          <Label>Next</Label>
+          <Label>Up next</Label>
           {/* Named rather than left to be discovered: the pause-menu research
               flags the unlabelled affordance as the recurring failure. */}
           {view.block.totalCount > 1 ? (
             <span className="text-ink-faint text-xs">↑↓ to move</span>
           ) : null}
         </div>
+        {/* Two rows answering different questions — "what in thirty seconds"
+            and "when does this end" — which previously arrived as two nearly
+            identical lines of small grey text. Each is tagged for what it is,
+            because the distinction is the entire value of the section. */}
         <div className="mt-2 space-y-2">
           {/* Derived from the cursor being drawn rather than from `view.nextItem`,
               which still trails the server by a round-trip after an arrow press
@@ -336,8 +344,11 @@ function NowTab({ view }: { view: StatusView }) {
             item={nextAfterShown}
           />
           {view.nextBlock ? (
-            <div className="border-line-soft flex items-baseline justify-between gap-3 border-t pt-2">
-              <span className="text-ink truncate text-sm">{view.nextBlock.title}</span>
+            <div className="border-line-soft flex items-baseline gap-2 border-t pt-2">
+              <Tag>Block</Tag>
+              <span className="text-ink min-w-0 flex-1 truncate text-sm">
+                {view.nextBlock.title}
+              </span>
               <span className="text-ink-muted shrink-0 text-xs tabular-nums">
                 in {formatDuration(view.nextBlock.startsInMs)}
               </span>
@@ -348,6 +359,22 @@ function NowTab({ view }: { view: StatusView }) {
 
       <Later view={view} />
     </>
+  );
+}
+
+/**
+ * What kind of thing a "Next" row is.
+ *
+ * A step belongs to the block on screen; a block is what replaces it. Told apart
+ * by a word rather than by an icon — an unlabelled glyph is the failure the
+ * pause-menu research names most often, and these two are close enough in shape
+ * that a bullet versus a rule was not doing it.
+ */
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="border-line text-ink-faint shrink-0 rounded border px-1.5 py-px text-[10px] font-medium tracking-wide uppercase">
+      {children}
+    </span>
   );
 }
 
@@ -364,10 +391,13 @@ function NextRow({
 
   return (
     <div className="flex items-baseline gap-2">
-      <span aria-hidden className="text-ink-faint shrink-0 text-sm">
-        ·
-      </span>
-      <span className={cn("truncate text-sm", item?.checked ? "text-ink-faint" : "text-ink-muted")}>
+      <Tag>Step</Tag>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          item?.checked ? "text-ink-faint line-through" : "text-ink-muted",
+        )}
+      >
         {text}
       </span>
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import type { BlockDocument } from "@/lib/editor/document";
 import type { EventDocument } from "@/app/api/events/[id]/body/route";
@@ -32,6 +33,7 @@ export function useBodyAutosave({
   basePath?: string;
 }) {
   const [state, setState] = useState<SaveState>("idle");
+  const queryClient = useQueryClient();
 
   const revRef = useRef(initialRev);
   const pendingRef = useRef<BlockDocument | null>(null);
@@ -85,12 +87,20 @@ export function useBodyAutosave({
         revRef.current = bodyRev;
       }
       setState("saved");
+
+      // The status window reads its checklist out of this body, so a saved body
+      // is a stale status by definition. Without this the overlay keeps serving
+      // the cached view until the next minute boundary — ticking a sub-task and
+      // watching nothing move for the better part of a minute.
+      //
+      // Prefixed, because the key carries the minute it was fetched for.
+      void queryClient.invalidateQueries({ queryKey: ["status"] });
     } catch {
       setState("error");
     } finally {
       inFlightRef.current = false;
     }
-  }, [basePath, clearTimers, eventId, onConflict]);
+  }, [basePath, clearTimers, eventId, onConflict, queryClient]);
 
   const scheduleSave = useCallback(
     (body: BlockDocument) => {

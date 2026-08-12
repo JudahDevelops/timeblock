@@ -18,6 +18,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-line: var(--line);
   --color-line-soft: var(--line-soft);
+  --color-track: var(--track);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-ink-faint: var(--ink-faint);
@@ -48,6 +49,12 @@
   /* Half-hour rules sit a step below the hour rules, so the grid reads as
      hours at a glance and only resolves into halves when looked at. */
   --line-soft: #f4f4f5;
+  /* The unfilled part of a progress bar. Deliberately not `surface-sunken`,
+     which is a *recessed* surface and therefore sits within a percent or two of
+     the page behind it — as a track that reads as no bar at all, so a bar at 10%
+     is indistinguishable from a bar at 90%. A track has the opposite job: it has
+     to state how long the whole run is, so it steps *away* from the surface. */
+  --track: #d4d4d8;
   --ink: #18181b;
   --ink-muted: #71717a;
   --ink-faint: #a1a1aa;
@@ -73,6 +80,10 @@
   --surface-raised: #18181b;
   --line: #27272a;
   --line-soft: #18181b;
+  /* Lighter than the page here, where light mode's is darker. Both step *away*
+     from the surface, which is the only thing that makes the end of the fill
+     findable. */
+  --track: #3f3f46;
   --ink: #fafafa;
   --ink-muted: #a1a1aa;
   --ink-faint: #71717a;
@@ -105,6 +116,58 @@ body {
 html,
 body {
   overflow: hidden;
+}
+
+/* Scrollbars are furniture, not content.
+   The default on Linux and Windows is a wide, opaque, permanently-reserved
+   gutter that draws the eye to the edge of a small card — loud enough inside a
+   dashboard field or the pause menu to compete with the value it sits beside.
+   Thin, and coloured from the tokens so it follows the theme instead of the OS.
+   `thin` still reserves its (much smaller) gutter, which is deliberate: an
+   overlay bar would let the last character of a list item sit underneath it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--track) transparent;
+}
+
+/* WebKit ignores the two properties above, so the same look is restated for it.
+   `background-clip: content-box` with a transparent border is what makes the
+   thumb read as narrower than the track it can be grabbed in. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--track);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ink-faint);
+}
+
+/* The square where the two bars meet, which otherwise paints OS grey. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* For strips that must stay scrollable without advertising it — a row of tabs
+   that overflows by a pixel would otherwise reserve a full gutter for an
+   overflow no one can see, let alone use. Not for anything a user has to know
+   is scrollable: hiding the bar hides the only cue that there is more. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* The calendar is a drag surface before it is a document.

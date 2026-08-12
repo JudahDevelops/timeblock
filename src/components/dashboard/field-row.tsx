@@ -461,7 +461,7 @@ function ProgressInput({
 
       {/* Shape first: the bar is what is read, the percentage only confirms it. */}
       <div
-        className="bg-surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full"
+        className="bg-track mt-1.5 h-1.5 w-full overflow-hidden rounded-full"
         role="progressbar"
         aria-valuenow={Math.round(fraction * 100)}
         aria-valuemin={0}

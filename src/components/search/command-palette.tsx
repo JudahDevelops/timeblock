@@ -92,10 +92,14 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
 
   function go(hit: SearchResult) {
     onClose();
+    // The search term rides along so the destination can point at what was
+    // matched. Without it the reader arrives at the top of a long document and
+    // has to find by eye the thing the search had already located.
+    const q = `q=${encodeURIComponent(debounced.trim())}`;
     if (hit.kind === "page") {
-      router.push(`/pages/${hit.id}`);
+      router.push(`/pages/${hit.id}?${q}`);
     } else {
-      router.push(`${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}`);
+      router.push(`${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}&${q}`);
     }
   }
 

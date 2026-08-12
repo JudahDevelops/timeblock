@@ -54,6 +54,38 @@ export function readTheme(): Theme {
 }
 
 /**
+ * Whether the app is currently dark, which is not the same question as whether
+ * the OS is.
+ *
+ * Dark mode here is a class on `<html>` the user sets independently of their
+ * system preference, so a component asking `prefers-color-scheme` directly draws
+ * itself dark inside a light app whenever the two disagree. Third-party widgets
+ * that theme themselves — the emoji picker, BlockNote — must read this instead,
+ * and BlockNote especially: it puts a literal `dark` class on its root, which
+ * our `dark:` variant matches, so getting this wrong flips every token inside
+ * the editor rather than just miscolouring the widget.
+ *
+ * Pair with `subscribeDark` through `useSyncExternalStore`, never `useState` in
+ * an effect.
+ */
+export function isDark() {
+  const theme = readTheme();
+  if (theme !== "system") return theme === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/** Fires on both inputs to `isDark`: an explicit choice, and the OS behind it. */
+export function subscribeDark(onChange: () => void) {
+  const unsubscribe = subscribeTheme(onChange);
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", onChange);
+  return () => {
+    unsubscribe();
+    media.removeEventListener("change", onChange);
+  };
+}
+
+/**
  * Runs before the first paint, inlined into `<head>`.
  *
  * A class-based theme is applied by JavaScript, and every route here is

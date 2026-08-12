@@ -3,14 +3,14 @@
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Block, BlockNoteEditor } from "@blocknote/core";
 import { BlockNoteView } from "@blocknote/mantine";
 import { useCreateBlockNote } from "@blocknote/react";
 
 import type { BlockDocument } from "@/lib/editor/document";
+import { isDark, subscribeDark } from "@/lib/theme";
 import { useCoarsePointer } from "@/lib/use-coarse-pointer";
-import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,7 +27,12 @@ export default function BlockEditor({
   initialContent: BlockDocument;
   onChange: (body: BlockDocument) => void;
 }) {
-  const dark = useMediaQuery("(prefers-color-scheme: dark)", false);
+  // The app's theme, not the OS's. Asking `prefers-color-scheme` here drew a
+  // dark editor inside a light page whenever the two disagreed — and worse than
+  // miscolouring itself, BlockNote marks its root with a literal `dark` class,
+  // which our `dark:` variant matches, so every token in the subtree flipped
+  // and the native checkboxes inherited `color-scheme: dark`.
+  const dark = useSyncExternalStore(subscribeDark, isDark, () => false);
   const coarse = useCoarsePointer();
   const [focused, setFocused] = useState(false);
 

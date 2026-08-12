@@ -91,7 +91,7 @@ export function ProgressBar({
 }) {
   return (
     <span
-      className={cn("bg-surface-sunken block h-1.5 w-20 overflow-hidden rounded-full", className)}
+      className={cn("bg-track block h-1.5 w-20 overflow-hidden rounded-full", className)}
       role="progressbar"
       aria-valuenow={Math.round(value * 100)}
       aria-valuemin={0}

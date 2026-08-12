@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 
 import type { PageDocument } from "@/app/api/pages/[id]/body/route";
 import { useBodyAutosave, type SaveState } from "@/components/editor/use-body-autosave";
+import { useHighlightMatch } from "@/components/search/use-highlight-match";
 import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/pages";
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
@@ -31,14 +32,19 @@ export function PageDetail({
   pageId,
   title: initialTitle,
   emoji: initialEmoji,
+  initialDoc,
 }: {
   pageId: string;
   title: string;
   emoji: string | null;
+  /** The document as the server already had it, so nothing has to be fetched. */
+  initialDoc: PageDocument;
 }) {
   const router = useRouter();
   const [emoji, setEmoji] = useState(initialEmoji);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  /** Set when arriving from the palette, so the match can be pointed at. */
+  const query = useSearchParams().get("q");
 
   const handleRename = (value: string) => {
     if (value !== initialTitle) {
@@ -64,6 +70,13 @@ export function PageDetail({
       if (!response.ok) throw new Error(`Failed to load page ${pageId}`);
       return response.json();
     },
+    // `initialData`, not `placeholderData`: this *is* the document, read from
+    // the same row in the same request that rendered the page, so the query
+    // starts resolved and the editor mounts on the first paint. With
+    // `staleTime: Infinity` it is also never refetched behind the user's back —
+    // which matters, because the editor is uncontrolled and a late refetch
+    // would be a second document arriving after they had started typing.
+    initialData: initialDoc,
     staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,
@@ -110,16 +123,28 @@ export function PageDetail({
         ) : isPending ? (
           <p className="text-ink-faint mt-8 text-sm">Loading…</p>
         ) : (
-          <PageBody doc={data} onDelete={handleDelete} />
+          <PageBody doc={data} onDelete={handleDelete} query={query} />
         )}
       </div>
     </div>
   );
 }
 
-function PageBody({ doc, onDelete }: { doc: PageDocument; onDelete: () => void }) {
+function PageBody({
+  doc,
+  onDelete,
+  query,
+}: {
+  doc: PageDocument;
+  onDelete: () => void;
+  query: string | null;
+}) {
   const [conflict, setConflict] = useState(false);
   const handleConflict = useCallback(() => setConflict(true), []);
+
+  // The body is in hand by the time this renders, so the editor is either up or
+  // about to be; the hook retries until its text appears.
+  useHighlightMatch(query, true);
 
   const { state, scheduleSave, flush } = useBodyAutosave({
     eventId: doc.id,

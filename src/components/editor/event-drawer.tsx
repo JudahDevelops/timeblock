@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
 import type { EventDocument } from "@/app/api/events/[id]/body/route";
+import { useHighlightMatch } from "@/components/search/use-highlight-match";
 import { dayAtMinutes, MIN_EVENT_MINUTES, minutesSinceMidnight } from "@/lib/calendar/geometry";
 import { useKeyboardInset } from "@/lib/use-keyboard-inset";
 import { cn } from "@/lib/utils";
@@ -269,6 +271,11 @@ function Body({
     initialRev: doc.bodyRev,
     onConflict: handleConflict,
   });
+
+  // Read here rather than threaded down from the route: `open` already passes
+  // through four components to reach this drawer, and the term is wanted only at
+  // the very bottom of that chain.
+  useHighlightMatch(useSearchParams().get("q"), true);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

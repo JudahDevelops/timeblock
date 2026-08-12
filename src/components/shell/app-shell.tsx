@@ -9,6 +9,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 
@@ -17,6 +18,7 @@ import { createDashboard, deleteDashboard } from "@/server/actions/dashboards";
 import { createPage, deletePage } from "@/server/actions/pages";
 import { StatusWindow } from "@/components/status/status-window";
 import { useToast } from "@/components/shell/toast";
+import { readSidebarCollapsed, setSidebarCollapsed, subscribeSidebar } from "@/lib/sidebar";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -48,6 +50,24 @@ export function SidebarTrigger() {
   );
 }
 
+/** A panel beside a page — the same glyph both directions, so the button reads
+ *  as one control being toggled rather than two that appear and vanish. */
+function SidebarIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="size-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden
+    >
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <path d="M6.5 3v10" />
+    </svg>
+  );
+}
+
 export type SidebarPage = { id: string; title: string; emoji: string | null };
 export type SidebarDashboard = { id: string; name: string; emoji: string | null };
 
@@ -68,6 +88,9 @@ export function AppShell({
   const close = useCallback(() => setOpen(false), []);
   const openMenu = useCallback(() => setOpen(true), []);
   const panel = useRef<HTMLDivElement>(null);
+  // `false` on the server, so the sidebar renders open and collapses on hydration
+  // if that is what was stored. The other way round flashes a full-width page.
+  const collapsed = useSyncExternalStore(subscribeSidebar, readSidebarCollapsed, () => false);
 
   useEffect(() => {
     if (!open) return;
@@ -83,9 +106,26 @@ export function AppShell({
   return (
     <OpenSidebar.Provider value={openMenu}>
       <div className="flex flex-1 overflow-hidden">
-        <aside className="border-line hidden w-56 shrink-0 flex-col border-r md:flex">
-          <Nav email={email} todayParam={todayParam} pages={pages} dashboards={dashboards} />
-        </aside>
+        {collapsed ? (
+          // The way back. Sized and placed to match the sidebar's own collapse
+          // button, so the control does not appear to move when it is used.
+          <div className="hidden shrink-0 flex-col p-2 md:flex">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="Show sidebar"
+              aria-expanded={false}
+              title="Show sidebar"
+              className="text-ink-muted hover:text-ink hover:bg-surface-raised rounded-md p-1.5 transition-colors"
+            >
+              <SidebarIcon />
+            </button>
+          </div>
+        ) : (
+          <aside className="border-line hidden w-56 shrink-0 flex-col border-r md:flex">
+            <Nav email={email} todayParam={todayParam} pages={pages} dashboards={dashboards} />
+          </aside>
+        )}
 
         {open ? (
           <div className="fixed inset-0 z-40 md:hidden">
@@ -142,13 +182,57 @@ function Nav({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden p-4">
-      <span className="px-2 text-sm font-semibold tracking-tight">Timeblock</span>
+      {/* The wordmark is the way home, the way every product's is. It was plain
+          text before, which meant the one thing at the top of the sidebar was
+          the one thing that did nothing. */}
+      <div className="flex items-center gap-1">
+        <Link
+          href={calendarHref}
+          onClick={onNavigate}
+          aria-label="Timeblock — go to today"
+          className="hover:bg-surface-raised -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 transition-colors"
+        >
+          <span
+            aria-hidden
+            className="bg-ink text-surface flex size-6 shrink-0 items-center justify-center rounded-[7px] text-[13px] font-bold"
+          >
+            T
+          </span>
+          <span className="truncate text-[15px] font-semibold tracking-tight">Timeblock</span>
+        </Link>
+
+        {/* Desktop only: the mobile drawer closes by tapping away or Escape, and
+            a second, differently-shaped close would just be one more control. */}
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-label="Hide sidebar"
+          aria-expanded
+          title="Hide sidebar"
+          className="text-ink-muted hover:text-ink hover:bg-surface-raised hidden shrink-0 rounded-md p-1.5 transition-colors md:block"
+        >
+          <SidebarIcon />
+        </button>
+      </div>
 
       <nav className="mt-6 flex flex-col gap-0.5">
         <NavLink
           href={calendarHref}
           active={pathname.startsWith("/calendar")}
           onNavigate={onNavigate}
+          icon={
+            <svg
+              viewBox="0 0 16 16"
+              className="size-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              aria-hidden
+            >
+              <rect x="2" y="3" width="12" height="11" rx="2" />
+              <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" strokeLinecap="round" />
+            </svg>
+          }
         >
           Calendar
         </NavLink>
@@ -524,11 +608,15 @@ function NavLink({
   href,
   active,
   onNavigate,
+  icon,
   children,
 }: {
   href: string;
   active: boolean;
   onNavigate?: () => void;
+  /** Occupies the same slot a dashboard's or page's emoji does, so a top-level
+   *  destination lines up with the lists below it instead of hanging left. */
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -537,10 +625,13 @@ function NavLink({
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "rounded-md px-2 py-1.5 text-sm transition-colors",
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
         active ? "bg-surface-raised text-ink font-medium" : "text-ink-muted hover:text-ink",
       )}
     >
+      {icon ? (
+        <span className="flex size-[18px] shrink-0 items-center justify-center">{icon}</span>
+      ) : null}
       {children}
     </Link>
   );

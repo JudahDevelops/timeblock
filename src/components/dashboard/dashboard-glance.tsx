@@ -76,7 +76,7 @@ function GlanceRow({ field, now }: { field: DashboardField; now: Date }) {
             {formatValue(field, now)}
           </dd>
         </div>
-        <div className="bg-surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
+        <div className="bg-track mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
           <div
             className={cn("h-full rounded-full", TONE_FILL[tone])}
             style={{ width: `${fraction * 100}%` }}
