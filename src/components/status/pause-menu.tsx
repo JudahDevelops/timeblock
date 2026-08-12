@@ -97,7 +97,7 @@ export function PauseMenu({
             when there are more dashboards than fit. It just must not show a bar
             to do it — the tabs are 1px taller than their box, so `auto` reserved
             a full horizontal gutter for an overflow nobody can see or use. */}
-        <div className="border-line no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
+        <div className="border-line no-scrollbar scroll-x-only flex shrink-0 items-center gap-1 border-b px-2">
           {tabs.map((entry) => (
             <button
               key={entry.id}

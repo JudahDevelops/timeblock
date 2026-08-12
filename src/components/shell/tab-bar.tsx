@@ -33,7 +33,7 @@ export function TabBar() {
   };
 
   return (
-    <div className="border-line bg-surface no-scrollbar hidden shrink-0 items-stretch gap-px overflow-x-auto border-b md:flex">
+    <div className="border-line bg-surface no-scrollbar scroll-x-only hidden shrink-0 items-stretch gap-px border-b md:flex">
       {tabs.map((tab) => {
         const active = tab.href === pathname;
 

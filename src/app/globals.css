@@ -170,6 +170,18 @@ body {
   }
 }
 
+/* A row of tabs scrolls sideways or not at all.
+   `overflow-x: auto` quietly sets `overflow-y` to `auto` as well — the two
+   cannot disagree unless both are stated — so a strip one pixel taller than its
+   box (a focus ring, a descender, a border) grows a *vertical* scrollbar down
+   its right edge for a pixel nobody can reach. Stated explicitly here, on the
+   utility these strips already carry, because the cause is the axis nobody
+   asked to scroll rather than the bar that shows up. */
+@utility scroll-x-only {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* The calendar is a drag surface before it is a document.
    Dragging out a block sweeps the pointer across hour labels, day names and
    every block it passes, and the browser reads that as a text selection —
