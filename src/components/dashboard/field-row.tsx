@@ -10,12 +10,14 @@ import {
   MAX_LIST_ITEMS,
   progressFraction,
   progressTone,
+  VALUE_SCALE_LABELS,
+  VALUE_SCALES,
   type DashboardField,
 } from "@/lib/dashboard/field";
 import { deleteField, updateField } from "@/server/actions/dashboards";
 import { cn } from "@/lib/utils";
 
-import { TONE_FILL } from "./tone";
+import { CHECKBOX_SIZE, SCALE_TEXT, SCALE_TEXT_SOFT, TONE_FILL } from "./tone";
 import { useInvalidateDashboards } from "./use-dashboards";
 
 /**
@@ -61,7 +63,7 @@ export function FieldRow({
   }, [field.label]);
 
   const save = (
-    patch: { label?: string; value?: unknown; config?: unknown },
+    patch: { label?: string; value?: unknown; config?: unknown; scale?: unknown },
     rollback: () => void,
   ) =>
     void updateField({ id: field.id, ...patch })
@@ -121,30 +123,35 @@ export function FieldRow({
             const previous = field.label;
             save({ label }, () => setLabel(previous));
           }}
-          className="text-ink-muted placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-xs font-medium tracking-wide uppercase outline-none"
+          // The label names the thing; the value is only its current reading. It
+          // was the smallest, dimmest text on the card, which inverted that.
+          // Full `text-ink` at `text-sm` semibold, no uppercase — small caps cost
+          // legibility at this size and were doing the emphasis work that weight
+          // and colour do better.
+          className="text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-sm font-semibold tracking-tight outline-none"
         />
 
-        {field.kind === "number" || field.kind === "progress" ? (
-          <button
-            type="button"
-            onClick={() => setSettingsOpen((open) => !open)}
-            aria-label="Field settings"
-            aria-expanded={settingsOpen}
-            className="text-ink-faint hover:text-ink shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        {/* Every kind now has at least a text size to set, so the gear is no
+            longer limited to the two that carry a unit or a target. */}
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((open) => !open)}
+          aria-label="Field settings"
+          aria-expanded={settingsOpen}
+          className="text-ink-faint hover:text-ink shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            aria-hidden
           >
-            <svg
-              viewBox="0 0 16 16"
-              className="size-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              aria-hidden
-            >
-              <circle cx="8" cy="8" r="2" />
-              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
-            </svg>
-          </button>
-        ) : null}
+            <circle cx="8" cy="8" r="2" />
+            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
+          </svg>
+        </button>
 
         <button
           type="button"
@@ -207,7 +214,7 @@ export function FieldRow({
 }
 
 type Save = (
-  patch: { label?: string; value?: unknown; config?: unknown },
+  patch: { label?: string; value?: unknown; config?: unknown; scale?: unknown },
   rollback: () => void,
 ) => void;
 
@@ -249,7 +256,13 @@ function NumberInput({
 
   return (
     <div className="flex items-baseline gap-1">
-      {prefix ? <span className="text-ink-muted shrink-0 text-lg">{prefix}</span> : null}
+      {/* Prefix and unit track the value one notch down, so a huge figure does
+          not end up wearing a tiny currency mark. */}
+      {prefix ? (
+        <span className={cn("text-ink-muted shrink-0", SCALE_TEXT_SOFT[field.scale])}>
+          {prefix}
+        </span>
+      ) : null}
       <input
         ref={input}
         value={draft}
@@ -265,9 +278,16 @@ function NumberInput({
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
-        className="text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-lg font-semibold tabular-nums outline-none"
+        className={cn(
+          "text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent font-semibold tabular-nums outline-none",
+          SCALE_TEXT[field.scale],
+        )}
       />
-      {suffix ? <span className="text-ink-muted shrink-0 text-sm">{suffix}</span> : null}
+      {suffix ? (
+        <span className={cn("text-ink-muted shrink-0", SCALE_TEXT_SOFT[field.scale])}>
+          {suffix}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -309,9 +329,20 @@ function ProgressInput({
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
           }}
-          className="text-ink placeholder:text-ink-faint w-20 min-w-0 bg-transparent text-lg font-semibold tabular-nums outline-none"
+          // Sized in `ch` so the field grows with the scale but still leaves the
+          // target and the percentage room, which `flex-1` would swallow.
+          style={{ width: "5ch" }}
+          className={cn(
+            "text-ink placeholder:text-ink-faint min-w-0 shrink bg-transparent font-semibold tabular-nums outline-none",
+            SCALE_TEXT[field.scale],
+          )}
         />
-        <span className="text-ink-faint shrink-0 text-sm tabular-nums">
+        <span
+          className={cn(
+            "text-ink-faint min-w-0 shrink truncate tabular-nums",
+            SCALE_TEXT_SOFT[field.scale],
+          )}
+        >
           / {formatNumber(field.config.target)}
           {field.config.suffix ? ` ${field.config.suffix}` : ""}
         </span>
@@ -370,7 +401,10 @@ function TextInput({
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
       }}
-      className="text-ink placeholder:text-ink-faint w-full bg-transparent text-base outline-none"
+      className={cn(
+        "text-ink placeholder:text-ink-faint w-full bg-transparent outline-none",
+        SCALE_TEXT_SOFT[field.scale],
+      )}
     />
   );
 }
@@ -387,7 +421,9 @@ function DateInput({
   return (
     <div className="flex items-baseline gap-3">
       {/* The relative reading is the value; the picker is how you change it. */}
-      <span className="text-ink shrink-0 text-lg font-semibold">
+      <span
+        className={cn("text-ink min-w-0 shrink truncate font-semibold", SCALE_TEXT[field.scale])}
+      >
         {field.value ? formatRelativeDate(field.value, now) : "—"}
       </span>
       <input
@@ -433,9 +469,9 @@ function CheckboxInput({
           setPending({ from: field.value, to: next });
           save({ value: next }, () => setPending(null));
         }}
-        className="accent-now size-4 cursor-pointer"
+        className={cn("accent-now cursor-pointer", CHECKBOX_SIZE[field.scale])}
       />
-      <span className={cn("text-base", checked ? "text-ink" : "text-ink-muted")}>
+      <span className={cn(SCALE_TEXT_SOFT[field.scale], checked ? "text-ink" : "text-ink-muted")}>
         {checked ? "Done" : "Not done"}
       </span>
     </label>
@@ -468,7 +504,11 @@ function ListInput({
               <span aria-hidden className="text-ink-faint shrink-0 text-xs">
                 ·
               </span>
-              <span className="text-ink min-w-0 flex-1 truncate text-sm">{item}</span>
+              <span
+                className={cn("text-ink min-w-0 flex-1 truncate", SCALE_TEXT_SOFT[field.scale])}
+              >
+                {item}
+              </span>
               <button
                 type="button"
                 aria-label={`Remove ${item}`}
@@ -498,18 +538,55 @@ function ListInput({
             setEntry("");
             commit([...items, trimmed]);
           }}
-          className="text-ink placeholder:text-ink-faint w-full bg-transparent text-sm outline-none"
+          className={cn(
+            "text-ink placeholder:text-ink-faint w-full bg-transparent outline-none",
+            SCALE_TEXT_SOFT[field.scale],
+          )}
         />
       ) : null}
     </div>
   );
 }
 
-/** Unit, prefix and target. Tucked behind a toggle: set once, then rarely touched. */
+/**
+ * Size, unit, prefix and target. Tucked behind a toggle: set once, then rarely
+ * touched. Size comes first because every kind has one, and the rest are the
+ * per-kind extras layered after it.
+ */
 function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
+  return (
+    <div className="border-line-soft mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-2">
+      <ScalePicker field={field} save={save} />
+      <KindSettings field={field} save={save} />
+    </div>
+  );
+}
+
+/** The text size, as four labelled steps rather than a number to guess at. */
+function ScalePicker({ field, save }: { field: DashboardField; save: Save }) {
+  return (
+    <label className="flex items-center gap-1.5">
+      <span className="text-ink-faint text-xs">Size</span>
+      <select
+        value={field.scale}
+        aria-label="Text size"
+        onChange={(event) => save({ scale: event.target.value }, () => {})}
+        className="border-line text-ink rounded border bg-transparent px-1.5 py-0.5 text-xs outline-none"
+      >
+        {VALUE_SCALES.map((scale) => (
+          <option key={scale} value={scale}>
+            {VALUE_SCALE_LABELS[scale]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function KindSettings({ field, save }: { field: DashboardField; save: Save }) {
   if (field.kind === "number") {
     return (
-      <div className="border-line-soft mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
+      <>
         <SettingInput
           label="Prefix"
           defaultValue={field.config.prefix ?? ""}
@@ -533,13 +610,13 @@ function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
             )
           }
         />
-      </div>
+      </>
     );
   }
 
   if (field.kind === "progress") {
     return (
-      <div className="border-line-soft mt-2 flex flex-wrap items-center gap-2 border-t pt-2">
+      <>
         <SettingInput
           label="Target"
           defaultValue={String(field.config.target)}
@@ -567,10 +644,12 @@ function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
           />
           <span className="text-ink-faint text-xs">Lower is better</span>
         </label>
-      </div>
+      </>
     );
   }
 
+  // The other kinds have nothing beyond their size, which the picker beside
+  // this already owns.
   return null;
 }
 

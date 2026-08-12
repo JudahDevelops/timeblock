@@ -43,6 +43,13 @@
       "when": 1786476301323,
       "tag": "0005_lush_snowbird",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786518688836,
+      "tag": "0006_fuzzy_raider",
+      "breakpoints": true
     }
   ]
 }

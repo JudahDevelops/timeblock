@@ -1,0 +1,1 @@
+ALTER TABLE "dashboard_fields" ADD COLUMN "scale" text DEFAULT 'm' NOT NULL;

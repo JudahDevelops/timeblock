@@ -32,6 +32,31 @@ export const FIELD_KIND_LABELS: Record<FieldKind, { label: string; hint: string 
   list: { label: "List", hint: "A few short items" },
 };
 
+/**
+ * How large a field's value is drawn.
+ *
+ * Lives on the base rather than in each kind's `config` because it is a
+ * presentation choice that means the same thing everywhere — a headline number
+ * and a headline note are the same request. Keeping it out of `config` also
+ * means resizing a field never rewrites its unit or target.
+ */
+export const VALUE_SCALES = ["s", "m", "l", "xl"] as const;
+export type ValueScale = (typeof VALUE_SCALES)[number];
+
+export const DEFAULT_SCALE: ValueScale = "m";
+
+/** Menu copy for the size picker. */
+export const VALUE_SCALE_LABELS: Record<ValueScale, string> = {
+  s: "Small",
+  m: "Medium",
+  l: "Large",
+  xl: "Huge",
+};
+
+export function isValueScale(value: unknown): value is ValueScale {
+  return typeof value === "string" && (VALUE_SCALES as readonly string[]).includes(value);
+}
+
 export type NumberConfig = { prefix?: string; suffix?: string; decimals?: number };
 export type ProgressConfig = {
   target: number;
@@ -62,6 +87,8 @@ export type DashboardField = {
   y: number;
   w: number;
   h: number;
+  /** How large the value is drawn. Meaningless for `checkbox`, harmless there. */
+  scale: ValueScale;
 } & FieldValue;
 
 /** A third of the width and one row: what a new field is worth before it holds anything. */
@@ -110,6 +137,7 @@ export function parseField(row: {
   gridY?: number;
   gridW?: number;
   gridH?: number;
+  scale?: string;
 }): DashboardField | null {
   if (!isFieldKind(row.kind)) return null;
 
@@ -117,6 +145,9 @@ export function parseField(row: {
     id: row.id,
     label: row.label,
     position: row.position,
+    // An unrecognised size falls back rather than rejecting the field: a row
+    // written by a newer build should still render, just at the default size.
+    scale: isValueScale(row.scale) ? row.scale : DEFAULT_SCALE,
     // Optional so the mapper stays usable from a caller that has not selected
     // the layout columns. Falling back to `position` keeps fields written before
     // the grid existed in a sane single column rather than stacked at the origin.

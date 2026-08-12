@@ -10,7 +10,7 @@ import {
 } from "@/lib/dashboard/field";
 import { cn } from "@/lib/utils";
 
-import { TONE_FILL } from "./tone";
+import { SCALE_TEXT_SOFT, TONE_FILL } from "./tone";
 import type { DashboardDetail } from "@/server/queries/dashboards";
 
 /**
@@ -64,10 +64,15 @@ function GlanceRow({ field, now }: { field: DashboardField; now: Date }) {
     return (
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <dt className="text-ink-muted truncate text-xs font-medium tracking-wide uppercase">
+          <dt className="text-ink truncate text-sm font-semibold tracking-tight">
             {field.label || "Untitled"}
           </dt>
-          <dd className="text-ink shrink-0 text-sm font-medium tabular-nums">
+          <dd
+            className={cn(
+              "text-ink-muted shrink-0 tabular-nums",
+              SCALE_TEXT_SOFT[field.scale === "xl" ? "l" : field.scale],
+            )}
+          >
             {formatValue(field, now)}
           </dd>
         </div>
@@ -83,10 +88,17 @@ function GlanceRow({ field, now }: { field: DashboardField; now: Date }) {
 
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-ink-muted truncate text-xs font-medium tracking-wide uppercase">
+      <dt className="text-ink truncate text-sm font-semibold tracking-tight">
         {field.label || "Untitled"}
       </dt>
-      <dd className="text-ink min-w-0 shrink-0 truncate text-sm font-medium tabular-nums">
+      {/* The glance caps at `l`: this is the 2-second surface, and an `xl` field
+          set on the dashboard would push everything else off it. */}
+      <dd
+        className={cn(
+          "text-ink-muted min-w-0 shrink-0 truncate tabular-nums",
+          SCALE_TEXT_SOFT[field.scale === "xl" ? "l" : field.scale],
+        )}
+      >
         {formatValue(field, now)}
       </dd>
     </div>

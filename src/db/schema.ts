@@ -349,6 +349,17 @@ export const dashboardFields = pgTable(
     gridW: integer("grid_w").notNull().default(3),
     gridH: integer("grid_h").notNull().default(1),
 
+    /**
+     * How large the value is drawn: s | m | l | xl.
+     *
+     * Its own column rather than a key in `config`, which holds per-kind
+     * settings — this means the same thing for every kind, and keeping it out
+     * means resizing a field never rewrites its unit or target. Text rather
+     * than an enum so a new size is a deploy, not a migration; `parseField`
+     * is the boundary that rejects anything unrecognised.
+     */
+    scale: text("scale").notNull().default("m"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

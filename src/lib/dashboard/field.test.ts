@@ -47,6 +47,17 @@ describe("parseField", () => {
     expect(row({ kind: "text", position: 3 })).toMatchObject({ x: 0, y: 3 });
   });
 
+  it("reads a recognised text size", () => {
+    expect(row({ kind: "text", scale: "xl" })?.scale).toBe("xl");
+  });
+
+  it("falls back to the default size rather than rejecting the field", () => {
+    // A row written by a newer build should still render, just at the default —
+    // losing the whole field over an unknown size would be the worse trade.
+    expect(row({ kind: "text", scale: "gigantic" })?.scale).toBe("m");
+    expect(row({ kind: "text" })?.scale).toBe("m");
+  });
+
   it("reads a number field with its prefix and suffix", () => {
     const field = row({ kind: "number", config: { prefix: "$" }, value: 4200 });
     expect(field).toMatchObject({ kind: "number", value: 4200, config: { prefix: "$" } });
@@ -170,6 +181,7 @@ describe("progressFraction", () => {
     y: 0,
     w: 4,
     h: 1,
+    scale: "m",
     kind: "progress",
     config: { target },
     value,
@@ -232,6 +244,7 @@ describe("formatValue", () => {
       y: 0,
       w: 4,
       h: 1,
+      scale: "m",
       config: {},
       value: null,
       ...over,

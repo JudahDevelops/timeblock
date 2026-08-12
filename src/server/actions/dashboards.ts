@@ -13,6 +13,7 @@ import {
   DEFAULT_FIELD_W,
   defaultsFor,
   isFieldKind,
+  isValueScale,
   MAX_LABEL_LENGTH,
 } from "@/lib/dashboard/field";
 import { clampBox, firstFreeSlot } from "@/lib/dashboard/grid";
@@ -158,6 +159,7 @@ export async function updateField(input: {
   label?: string;
   value?: unknown;
   config?: unknown;
+  scale?: unknown;
 }) {
   const userId = await requireUserId();
 
@@ -174,6 +176,9 @@ export async function updateField(input: {
   if (input.label !== undefined) patch.label = input.label.slice(0, MAX_LABEL_LENGTH);
   if (input.value !== undefined) patch.value = coerceValue(existing.kind, input.value);
   if (input.config !== undefined) patch.config = coerceConfig(existing.kind, input.config);
+  // Silently ignored rather than throwing: an unknown size is a client bug, not
+  // a reason to lose the rest of the patch.
+  if (isValueScale(input.scale)) patch.scale = input.scale;
 
   await db
     .update(dashboardFields)
