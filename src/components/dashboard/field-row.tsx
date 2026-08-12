@@ -10,7 +10,7 @@ import {
   MAX_LIST_ITEMS,
   progressFraction,
   progressTone,
-  NESTABLE_FIELD_KINDS,
+  nestableKindsAt,
   VALUE_SCALE_LABELS,
   VALUE_SCALES,
   type DashboardField,
@@ -43,6 +43,7 @@ export function FieldRow({
   pending,
   resizable,
   narrow,
+  depth = 0,
   onAddToGroup,
   onSaveChildren,
 }: {
@@ -57,6 +58,8 @@ export function FieldRow({
   resizable?: boolean;
   /** Passed through to a group's own grid, which collapses on a phone too. */
   narrow?: boolean;
+  /** How many groups this row sits inside. See `FieldGrid`. */
+  depth?: number;
   onAddToGroup?: (groupId: string, kind: FieldKind) => void;
   onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
 }) {
@@ -213,6 +216,7 @@ export function FieldRow({
           now={now}
           save={save}
           narrow={narrow}
+          depth={depth}
           onAddToGroup={onAddToGroup}
           onSaveChildren={onSaveChildren}
         />
@@ -254,6 +258,7 @@ function FieldValueEditor({
   now,
   save,
   narrow,
+  depth = 0,
   onAddToGroup,
   onSaveChildren,
 }: {
@@ -261,6 +266,7 @@ function FieldValueEditor({
   now: Date;
   save: Save;
   narrow?: boolean;
+  depth?: number;
   onAddToGroup?: (groupId: string, kind: FieldKind) => void;
   onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
 }) {
@@ -283,6 +289,7 @@ function FieldValueEditor({
           field={field}
           now={now}
           narrow={narrow}
+          depth={depth}
           onAddToGroup={onAddToGroup}
           onSaveChildren={onSaveChildren}
         />
@@ -299,20 +306,27 @@ function FieldValueEditor({
  *
  * This and `field-grid` import each other, which is safe only because neither
  * touches the other during module evaluation: both references are resolved when
- * a component renders, by which point both modules have finished loading. The
- * recursion terminates on the data, not on a depth counter — a group is never
- * offered inside a group, so `children` is always empty one level down.
+ * a component renders, by which point both modules have finished loading.
+ *
+ * The recursion terminates on the data — a group whose children hold no further
+ * groups simply stops — and `depth` is what guarantees the data can never grow
+ * deeper than that: at the ceiling the menu below stops offering `group`, so an
+ * undrawable tree cannot be built in the first place. `nestFields` enforces the
+ * same rule on the way out of the database, for rows written by anything else.
  */
 function GroupSurface({
   field,
   now,
   narrow,
+  depth = 0,
   onAddToGroup,
   onSaveChildren,
 }: {
   field: Extract<DashboardField, { kind: "group" }>;
   now: Date;
   narrow?: boolean;
+  /** This group's own depth: 0 on the dashboard, 1 inside another group. */
+  depth?: number;
   onAddToGroup?: (groupId: string, kind: FieldKind) => void;
   onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
 }) {
@@ -325,7 +339,12 @@ function GroupSurface({
             now={now}
             narrow={narrow ?? false}
             cellHeight={NESTED_CELL_HEIGHT}
+            depth={depth + 1}
             onSave={(layout) => onSaveChildren?.(field.id, layout)}
+            // Threaded on so a group nested inside this one can add to itself.
+            // Without these a second-rank group would render but be inert.
+            onAddToGroup={onAddToGroup}
+            onSaveChildren={onSaveChildren}
           />
         ) : (
           <p className="text-ink-faint py-2 text-center text-xs">Nothing in here yet.</p>
@@ -336,7 +355,9 @@ function GroupSurface({
         <AddField
           compact
           label="Add to group"
-          kinds={NESTABLE_FIELD_KINDS}
+          // A group one rank down may still hold a group; at the ceiling only
+          // leaves are offered, so the tree cannot outgrow what can be drawn.
+          kinds={nestableKindsAt(depth + 1)}
           onPick={(kind) => onAddToGroup(field.id, kind)}
         />
       ) : null}

@@ -17,6 +17,7 @@ import {
   type FieldKind,
 } from "@/lib/dashboard/field";
 import { firstFreeSlot, type GridItem } from "@/lib/dashboard/grid";
+import { findField } from "@/lib/dashboard/tree";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { createField, updateFieldLayout, updateDashboard } from "@/server/actions/dashboards";
 import type { DashboardDetail } from "@/server/queries/dashboards";
@@ -80,19 +81,26 @@ export function DashboardView({ dashboard, now }: { dashboard: DashboardDetail; 
    * A pending child is spliced into its group's `children` rather than appended
    * at the top level — otherwise clicking "Add to group" would show the new field
    * outside the box it was added to until the server came back.
+   *
+   * Walks the whole tree rather than only the top rank, because a group may now
+   * hold a group: a field added two levels down would otherwise find no parent
+   * here and appear on the dashboard until the server replied, then jump.
    */
   const stillPending = adding.filter((entry) => dashboard.fields.length <= entry.countWhenAdded);
   const fields = (() => {
     const topLevel = stillPending.filter((entry) => entry.parentId === null);
     const nested = stillPending.filter((entry) => entry.parentId !== null);
 
-    const withChildren = dashboard.fields.map((field) => {
-      const mine = nested.filter((entry) => entry.parentId === field.id);
-      if (mine.length === 0 || field.kind !== "group") return field;
-      return { ...field, children: [...field.children, ...mine.map((entry) => entry.field)] };
-    });
+    const splice = (list: DashboardField[]): DashboardField[] =>
+      list.map((field) => {
+        if (field.kind !== "group") return field;
+        const mine = nested.filter((entry) => entry.parentId === field.id);
+        const children = splice(field.children);
+        if (mine.length === 0) return children === field.children ? field : { ...field, children };
+        return { ...field, children: [...children, ...mine.map((entry) => entry.field)] };
+      });
 
-    return [...withChildren, ...topLevel.map((entry) => entry.field)];
+    return [...splice(dashboard.fields), ...topLevel.map((entry) => entry.field)];
   })();
 
   /**
@@ -107,8 +115,10 @@ export function DashboardView({ dashboard, now }: { dashboard: DashboardDetail; 
     const { config, value } = defaultsFor(kind);
     const id = `pending:${crypto.randomUUID()}`;
 
-    const siblings =
-      parentId === null ? fields : (fields.find((field) => field.id === parentId)?.children ?? []);
+    // Searched depth-first, not across the top rank only — the target group may
+    // itself be inside another, and picking the wrong sibling set would place
+    // the new field on top of an existing one.
+    const siblings = parentId === null ? fields : (findField(fields, parentId)?.children ?? []);
 
     const isGroup = kind === "group";
     const w = isGroup ? DEFAULT_GROUP_W : DEFAULT_FIELD_W;

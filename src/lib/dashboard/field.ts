@@ -42,17 +42,37 @@ export const FIELD_KIND_LABELS: Record<FieldKind, { label: string; hint: string 
 };
 
 /**
- * A group holds fields; nothing holds a group.
+ * How deep groups may go.
  *
- * One level is a deliberate ceiling rather than a step towards more. It keeps
- * both the renderer and the layout engine non-recursive, and it is the depth the
- * feature was asked for: a client list whose clients each carry a few readings.
- * The menu inside a group is filtered through this, so the case simply cannot be
- * created from the UI.
+ * Depth 1 is a group on the dashboard; depth 2 is a group inside that one. Its
+ * children may not themselves be groups, so the tree bottoms out at three ranks
+ * of field.
+ *
+ * A ceiling rather than free recursion, because there is no honest way to draw
+ * the fourth rank: a group is a surface with a scroll of its own, and nesting
+ * them without limit ends in a column of readings too narrow to label. Two is
+ * what the shape of the data actually asks for — a client list, whose clients
+ * carry sections, whose sections carry readings.
  */
-export const NESTABLE_FIELD_KINDS = FIELD_KINDS.filter(
+export const MAX_GROUP_DEPTH = 2;
+
+/** Every kind except `group` — what may sit at the bottom rank. */
+const LEAF_FIELD_KINDS = FIELD_KINDS.filter(
   (kind): kind is Exclude<FieldKind, "group"> => kind !== "group",
 );
+
+/**
+ * What may be added inside a group at `depth`.
+ *
+ * The menu is filtered through this, so a tree too deep to draw simply cannot be
+ * built from the UI — the rule is enforced where the choice is offered rather
+ * than rejected afterwards. `depth` is the depth of the group being added *to*:
+ * a group sitting on the dashboard is 1, so at `MAX_GROUP_DEPTH` the menu stops
+ * offering `group` and only leaves remain.
+ */
+export function nestableKindsAt(depth: number): readonly FieldKind[] {
+  return depth >= MAX_GROUP_DEPTH ? LEAF_FIELD_KINDS : FIELD_KINDS;
+}
 
 /**
  * How large a field's value is drawn.

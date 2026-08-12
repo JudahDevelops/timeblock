@@ -5,6 +5,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { dashboardFields, dashboards, type DashboardFieldRow } from "@/db/schema";
 import { parseField, type DashboardField } from "@/lib/dashboard/field";
+import { canNest } from "@/lib/dashboard/tree";
 
 export type DashboardSummary = {
   id: string;
@@ -112,11 +113,15 @@ async function getFields(userId: string, dashboardId: string): Promise<Dashboard
 /**
  * Turns one dashboard's flat rows into top-level fields carrying their children.
  *
- * Done here rather than with a recursive query because the tree is only ever two
- * ranks tall: one pass to parse, one to attach. A child whose parent is missing
- * from the set — deleted underneath us, or pointing at another dashboard — is
+ * Done here rather than with a recursive query: parents are held by identity in
+ * `byId` and mutated in place, so a field finds its parent whatever order the
+ * rows arrive in and however deep it sits. A child whose parent is missing from
+ * the set — deleted underneath us, or pointing at another dashboard — is
  * promoted to the top level rather than dropped, so a field can never become
  * invisible while its row still exists.
+ *
+ * The depth and cycle rules live in `lib/dashboard/tree.ts`, where they can be
+ * tested without a database.
  */
 function nestFields(rows: DashboardFieldRow[]): DashboardField[] {
   const parsed = rows
@@ -133,7 +138,11 @@ function nestFields(rows: DashboardFieldRow[]): DashboardField[] {
     // Only a group may hold anything. A parent of any other kind means a stale
     // pointer — the kind was changed underneath the child — and the child is
     // better shown at the top level than not at all.
-    if (parent && parent.kind === "group" && parent.id !== field.id) parent.children.push(field);
+    //
+    // `canNest` is what stops a row escaping the tree: a parent chain that loops
+    // back on itself, or one already at the depth ceiling, would otherwise leave
+    // the field attached to something unreachable and therefore never drawn.
+    if (parent && parent.kind === "group" && canNest(field, byId)) parent.children.push(field);
     else top.push(field);
   }
 

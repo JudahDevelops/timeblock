@@ -54,6 +54,7 @@ export function FieldGrid({
   now,
   narrow,
   cellHeight = CELL_HEIGHT,
+  depth = 0,
   onSave,
   onAddToGroup,
   onSaveChildren,
@@ -63,6 +64,14 @@ export function FieldGrid({
   narrow: boolean;
   /** Shorter inside a group, whose card is only a few outer rows tall. */
   cellHeight?: number;
+  /**
+   * How many groups this grid sits inside — 0 on the dashboard itself.
+   *
+   * Carried down so a group can tell whether it is still allowed to offer
+   * another group in its menu. The renderer recurses on the data; this is what
+   * tells it when to stop.
+   */
+  depth?: number;
   onSave: (layout: GridItem[]) => void;
   onAddToGroup?: (groupId: string, kind: DashboardField["kind"]) => void;
   /** Saves one group's children. Distinct from `onSave`, which owns this surface. */
@@ -227,6 +236,7 @@ export function FieldGrid({
               onResizeStart={
                 isPending ? undefined : (event) => startGesture(item.id, "resize", event)
               }
+              depth={depth}
               onAddToGroup={onAddToGroup}
               onSaveChildren={onSaveChildren}
             />

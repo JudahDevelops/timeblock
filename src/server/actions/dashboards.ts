@@ -16,6 +16,7 @@ import {
   defaultsFor,
   isFieldKind,
   isValueScale,
+  MAX_GROUP_DEPTH,
   MAX_LABEL_LENGTH,
 } from "@/lib/dashboard/field";
 import { clampBox, firstFreeSlot } from "@/lib/dashboard/grid";
@@ -114,13 +115,11 @@ export async function createField(input: {
 
   if (!parent) throw new Error("Dashboard not found");
 
-  // Nesting is one level deep, and this is where that is enforced — the column
-  // itself would happily take a chain. Checked here rather than trusted from the
-  // client, which only hides the option in a menu.
+  // The depth ceiling is enforced here, not in the menu — the column itself
+  // would happily take a chain of any length, and the client only hides the
+  // option. `MAX_GROUP_DEPTH` groups may nest; below that only leaves.
   const parentId = input.parentId ?? null;
   if (parentId !== null) {
-    if (input.kind === "group") throw new Error("A group cannot hold another group");
-
     const [container] = await db
       .select({ kind: dashboardFields.kind, parentId: dashboardFields.parentId })
       .from(dashboardFields)
@@ -135,7 +134,15 @@ export async function createField(input: {
 
     if (!container) throw new Error("Group not found");
     if (container.kind !== "group") throw new Error("That field cannot hold others");
-    if (container.parentId !== null) throw new Error("A group cannot hold another group");
+
+    // The container's own depth, read straight off the row: a group with no
+    // parent sits at 1, one with a parent at 2. Two ranks is the whole tree, so
+    // this needs no walk — and the grandparent cannot itself be nested, because
+    // that is the case this check rejects.
+    const containerDepth = container.parentId === null ? 1 : 2;
+    if (input.kind === "group" && containerDepth >= MAX_GROUP_DEPTH) {
+      throw new Error("Groups cannot nest that deep");
+    }
   }
 
   // The existing boxes, so the new field lands in a gap rather than on top of
