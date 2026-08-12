@@ -41,6 +41,17 @@ describe("parseField", () => {
     });
   });
 
+  it("carries parentId through, defaulting to the top level", () => {
+    expect(row({ kind: "text" })).toMatchObject({ parentId: null });
+    expect(row({ kind: "text", parentId: "group-1" })).toMatchObject({ parentId: "group-1" });
+  });
+
+  it("parses a group with no children of its own", () => {
+    // Children are separate rows joined by `parentId`, so a group parsed on its
+    // own is empty until the query layer nests them.
+    expect(row({ kind: "group" })).toMatchObject({ kind: "group", value: null, children: [] });
+  });
+
   it("falls back to a single column for a row written before the grid existed", () => {
     // `position` as `y` keeps pre-grid fields readable instead of stacking every
     // one of them at the origin, where they would all collide.
@@ -111,6 +122,14 @@ describe("defaultsFor", () => {
 });
 
 describe("coerceValue", () => {
+  it("drops anything sent as a group's value", () => {
+    // A group holds rows, not a reading, so nothing can be smuggled into a
+    // column that is never read back.
+    expect(coerceValue("group", { smuggled: true })).toBeNull();
+    expect(coerceValue("group", "text")).toBeNull();
+    expect(coerceValue("group", [1, 2, 3])).toBeNull();
+  });
+
   it("parses a typed number, including one with thousands separators", () => {
     expect(coerceValue("number", "4,200")).toBe(4200);
     expect(coerceValue("number", "72.5")).toBe(72.5);
@@ -182,6 +201,8 @@ describe("progressFraction", () => {
     w: 4,
     h: 1,
     scale: "m",
+    parentId: null,
+    children: [],
     kind: "progress",
     config: { target },
     value,
@@ -249,6 +270,30 @@ describe("formatValue", () => {
       value: null,
       ...over,
     }) as DashboardField;
+
+  it("summarises a group by how much it holds", () => {
+    // A group has no reading of its own, so the count is the only honest
+    // one-line summary for the glance.
+    expect(formatValue(build({ kind: "group", children: [] }), now)).toBe("—");
+    expect(
+      formatValue(
+        build({
+          kind: "group",
+          children: [build({ kind: "text" })],
+        }),
+        now,
+      ),
+    ).toBe("1 field");
+    expect(
+      formatValue(
+        build({
+          kind: "group",
+          children: [build({ kind: "text" }), build({ kind: "number" })],
+        }),
+        now,
+      ),
+    ).toBe("2 fields");
+  });
 
   it("renders a number with prefix, separators and unit", () => {
     expect(formatValue(build({ kind: "number", config: { prefix: "$" }, value: 4200 }), now)).toBe(

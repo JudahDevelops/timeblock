@@ -1,0 +1,3 @@
+ALTER TABLE "dashboard_fields" ADD COLUMN "parent_id" uuid;--> statement-breakpoint
+ALTER TABLE "dashboard_fields" ADD CONSTRAINT "dashboard_fields_parent_id_dashboard_fields_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."dashboard_fields"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "dashboard_fields_parent_idx" ON "dashboard_fields" USING btree ("parent_id");

@@ -18,13 +18,29 @@ const MENU_MAX_HEIGHT = 288;
 export function AddField({
   onPick,
   pending,
+  kinds = FIELD_KINDS,
+  compact,
+  label = "Add field",
 }: {
   onPick: (kind: FieldKind) => void;
   pending?: boolean;
+  /** Which kinds to offer. A group's menu leaves out `group`. */
+  kinds?: readonly FieldKind[];
+  /** Smaller, for the inside of a group where the card supplies the frame. */
+  compact?: boolean;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   /** Which way the menu opens. Measured on open, never assumed. */
   const [drop, setDrop] = useState<"up" | "down">("down");
+  /**
+   * Viewport coordinates for a menu that has to escape a clipping ancestor.
+   *
+   * Only set in `compact` mode — inside a group, where the card is
+   * `overflow-hidden`. Null elsewhere, so the dashboard's own menu keeps its
+   * simpler absolute positioning and stays glued to the button on scroll.
+   */
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
@@ -55,7 +71,25 @@ export function AddField({
     const box = trigger.current?.getBoundingClientRect();
     if (box) {
       const below = window.innerHeight - box.bottom;
-      setDrop(below < MENU_MAX_HEIGHT && box.top > below ? "up" : "down");
+      const up = below < MENU_MAX_HEIGHT && box.top > below;
+      setDrop(up ? "up" : "down");
+
+      // Measured against the viewport because the menu is `fixed` in this mode.
+      // Width follows the trigger but never drops under the menu's own minimum,
+      // which a narrow group card would otherwise force.
+      const width = Math.max(box.width, 240);
+      setAnchor(
+        compact
+          ? {
+              top: up ? Math.max(8, box.top - MENU_MAX_HEIGHT - 4) : box.bottom + 4,
+              // Pulled back inside the viewport: a group card near the right
+              // edge is narrower than the menu's minimum width, so anchoring
+              // naively would run the options off-screen.
+              left: Math.max(8, Math.min(box.left, window.innerWidth - width - 8)),
+              width,
+            }
+          : null,
+      );
     }
     setOpen((current) => !current);
   };
@@ -69,11 +103,14 @@ export function AddField({
         disabled={pending}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="border-line text-ink-muted hover:text-ink hover:border-ink-faint flex w-full items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-sm transition-colors disabled:opacity-50"
+        className={cn(
+          "border-line text-ink-muted hover:text-ink hover:border-ink-faint flex w-full items-center justify-center gap-2 rounded-lg border border-dashed transition-colors disabled:opacity-50",
+          compact ? "px-2 py-1 text-xs" : "px-3 py-2.5 text-sm",
+        )}
       >
         <svg
           viewBox="0 0 16 16"
-          className="size-3.5"
+          className={compact ? "size-3" : "size-3.5"}
           fill="none"
           stroke="currentColor"
           strokeWidth={2}
@@ -82,19 +119,35 @@ export function AddField({
         >
           <path d="M8 3v10M3 8h10" />
         </svg>
-        Add field
+        {label}
       </button>
 
       {open ? (
         <div
           role="menu"
-          style={{ maxHeight: MENU_MAX_HEIGHT }}
+          style={
+            // Inside a group the menu has to escape the card, which is
+            // `overflow-hidden` and only a few rows tall — an absolutely
+            // positioned menu is simply clipped away there. `fixed` takes it out
+            // of that box; the anchor is measured on open, since a fixed element
+            // no longer inherits the trigger's position.
+            anchor
+              ? {
+                  maxHeight: MENU_MAX_HEIGHT,
+                  top: anchor.top,
+                  left: anchor.left,
+                  width: anchor.width,
+                }
+              : { maxHeight: MENU_MAX_HEIGHT }
+          }
           className={cn(
-            "border-line bg-surface absolute left-0 z-30 w-full min-w-[240px] overflow-y-auto rounded-lg border py-1 shadow-lg",
-            drop === "up" ? "bottom-full mb-1" : "top-full mt-1",
+            "border-line bg-surface z-50 min-w-[240px] overflow-y-auto rounded-lg border py-1 shadow-lg",
+            anchor
+              ? "fixed"
+              : cn("absolute left-0 w-full", drop === "up" ? "bottom-full mb-1" : "top-full mt-1"),
           )}
         >
-          {FIELD_KINDS.map((kind) => (
+          {kinds.map((kind) => (
             <button
               key={kind}
               type="button"

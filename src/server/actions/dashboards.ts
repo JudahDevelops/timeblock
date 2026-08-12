@@ -11,6 +11,8 @@ import {
   coerceValue,
   DEFAULT_FIELD_H,
   DEFAULT_FIELD_W,
+  DEFAULT_GROUP_H,
+  DEFAULT_GROUP_W,
   defaultsFor,
   isFieldKind,
   isValueScale,
@@ -86,7 +88,13 @@ export async function deleteDashboard(id: string) {
   revalidateDashboards();
 }
 
-export async function createField(input: { dashboardId: string; kind: string; label?: string }) {
+export async function createField(input: {
+  dashboardId: string;
+  kind: string;
+  label?: string;
+  /** The `group` to drop this into, or omitted for the dashboard's top level. */
+  parentId?: string | null;
+}) {
   const userId = await requireUserId();
   if (!isFieldKind(input.kind)) throw new Error("Unknown field type");
 
@@ -106,9 +114,35 @@ export async function createField(input: { dashboardId: string; kind: string; la
 
   if (!parent) throw new Error("Dashboard not found");
 
+  // Nesting is one level deep, and this is where that is enforced — the column
+  // itself would happily take a chain. Checked here rather than trusted from the
+  // client, which only hides the option in a menu.
+  const parentId = input.parentId ?? null;
+  if (parentId !== null) {
+    if (input.kind === "group") throw new Error("A group cannot hold another group");
+
+    const [container] = await db
+      .select({ kind: dashboardFields.kind, parentId: dashboardFields.parentId })
+      .from(dashboardFields)
+      .where(
+        and(
+          eq(dashboardFields.id, parentId),
+          eq(dashboardFields.userId, userId),
+          eq(dashboardFields.dashboardId, input.dashboardId),
+        ),
+      )
+      .limit(1);
+
+    if (!container) throw new Error("Group not found");
+    if (container.kind !== "group") throw new Error("That field cannot hold others");
+    if (container.parentId !== null) throw new Error("A group cannot hold another group");
+  }
+
   // The existing boxes, so the new field lands in a gap rather than on top of
   // something. One extra read, but placing blind means every new field starts
   // colliding and the first thing the user sees is a layout shuffling itself.
+  // Scoped to the surface being added to: a group has its own grid, and counting
+  // the dashboard's other fields would push the first child far down an empty one.
   const existing = await db
     .select({
       id: dashboardFields.id,
@@ -119,10 +153,21 @@ export async function createField(input: { dashboardId: string; kind: string; la
       position: dashboardFields.position,
     })
     .from(dashboardFields)
-    .where(eq(dashboardFields.dashboardId, input.dashboardId));
+    .where(
+      and(
+        eq(dashboardFields.dashboardId, input.dashboardId),
+        parentId === null
+          ? isNull(dashboardFields.parentId)
+          : eq(dashboardFields.parentId, parentId),
+      ),
+    );
+
+  const isGroup = input.kind === "group";
+  const width = isGroup ? DEFAULT_GROUP_W : DEFAULT_FIELD_W;
+  const height = isGroup ? DEFAULT_GROUP_H : DEFAULT_FIELD_H;
 
   const position = existing.reduce((highest, row) => Math.max(highest, row.position), -1) + 1;
-  const slot = firstFreeSlot(existing, DEFAULT_FIELD_W, DEFAULT_FIELD_H);
+  const slot = firstFreeSlot(existing, width, height);
   const { config, value } = defaultsFor(input.kind);
 
   const [row] = await db
@@ -130,6 +175,7 @@ export async function createField(input: { dashboardId: string; kind: string; la
     .values({
       dashboardId: input.dashboardId,
       userId,
+      parentId,
       label: (input.label ?? "").slice(0, MAX_LABEL_LENGTH),
       kind: input.kind,
       config,
@@ -137,8 +183,8 @@ export async function createField(input: { dashboardId: string; kind: string; la
       position,
       gridX: slot.x,
       gridY: slot.y,
-      gridW: DEFAULT_FIELD_W,
-      gridH: DEFAULT_FIELD_H,
+      gridW: width,
+      gridH: height,
     })
     .returning({ id: dashboardFields.id });
 

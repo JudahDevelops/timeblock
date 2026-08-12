@@ -18,7 +18,15 @@
  */
 
 /** Every field kind. The menu is generated from this, so adding one is additive. */
-export const FIELD_KINDS = ["number", "progress", "text", "date", "checkbox", "list"] as const;
+export const FIELD_KINDS = [
+  "number",
+  "progress",
+  "text",
+  "date",
+  "checkbox",
+  "list",
+  "group",
+] as const;
 
 export type FieldKind = (typeof FIELD_KINDS)[number];
 
@@ -30,7 +38,21 @@ export const FIELD_KIND_LABELS: Record<FieldKind, { label: string; hint: string 
   date: { label: "Date", hint: "A date, shown as how long ago it was" },
   checkbox: { label: "Checkbox", hint: "Done or not done" },
   list: { label: "List", hint: "A few short items" },
+  group: { label: "Group", hint: "A box holding its own fields — one per client, say" },
 };
+
+/**
+ * A group holds fields; nothing holds a group.
+ *
+ * One level is a deliberate ceiling rather than a step towards more. It keeps
+ * both the renderer and the layout engine non-recursive, and it is the depth the
+ * feature was asked for: a client list whose clients each carry a few readings.
+ * The menu inside a group is filtered through this, so the case simply cannot be
+ * created from the UI.
+ */
+export const NESTABLE_FIELD_KINDS = FIELD_KINDS.filter(
+  (kind): kind is Exclude<FieldKind, "group"> => kind !== "group",
+);
 
 /**
  * How large a field's value is drawn.
@@ -89,6 +111,17 @@ export type DashboardField = {
   h: number;
   /** How large the value is drawn. Meaningless for `checkbox`, harmless there. */
   scale: ValueScale;
+  /** The `group` this field sits in, or null at the dashboard's top level. */
+  parentId: string | null;
+  /**
+   * Fields nested inside this one. Only ever populated for a `group`, and their
+   * own `children` are always empty — the tree is two ranks tall by design.
+   *
+   * Assembled by the query layer from a flat row set rather than fetched per
+   * group: Supabase is ~270ms away, so a round trip per group would cost more
+   * than the whole page.
+   */
+  children: DashboardField[];
 } & FieldValue;
 
 /** A third of the width and one row: what a new field is worth before it holds anything. */
@@ -101,7 +134,11 @@ export type FieldValue =
   | { kind: "text"; config: Record<string, never>; value: string | null }
   | { kind: "date"; config: Record<string, never>; value: string | null }
   | { kind: "checkbox"; config: Record<string, never>; value: boolean | null }
-  | { kind: "list"; config: Record<string, never>; value: string[] | null };
+  | { kind: "list"; config: Record<string, never>; value: string[] | null }
+  // A group's contents are rows of their own, joined by `parentId` — never a
+  // blob in `value`. Separate rows are what let a child be dragged, resized and
+  // written independently, which is the entire point of the kind.
+  | { kind: "group"; config: Record<string, never>; value: null };
 
 /** What a freshly created field of each kind starts as. */
 export function defaultsFor(kind: FieldKind): { config: unknown; value: unknown } {
@@ -118,6 +155,10 @@ export function defaultsFor(kind: FieldKind): { config: unknown; value: unknown 
       return { config: {}, value: null };
   }
 }
+
+/** A group is a surface, not a reading, so it opens at half width and three rows. */
+export const DEFAULT_GROUP_W = 6;
+export const DEFAULT_GROUP_H = 3;
 
 /**
  * Rebuilds a typed field from the two opaque jsonb columns.
@@ -138,6 +179,7 @@ export function parseField(row: {
   gridW?: number;
   gridH?: number;
   scale?: string;
+  parentId?: string | null;
 }): DashboardField | null {
   if (!isFieldKind(row.kind)) return null;
 
@@ -145,6 +187,10 @@ export function parseField(row: {
     id: row.id,
     label: row.label,
     position: row.position,
+    parentId: row.parentId ?? null,
+    // Filled in by the query layer, which is the only place that has the whole
+    // row set to group from. A field parsed on its own has no children yet.
+    children: [] as DashboardField[],
     // An unrecognised size falls back rather than rejecting the field: a row
     // written by a newer build should still render, just at the default size.
     scale: isValueScale(row.scale) ? row.scale : DEFAULT_SCALE,
@@ -207,6 +253,9 @@ export function parseField(row: {
           ? row.value.filter((entry): entry is string => typeof entry === "string")
           : null,
       };
+
+    case "group":
+      return { ...base, kind: "group", config: {}, value: null };
   }
 }
 
@@ -251,6 +300,12 @@ export function coerceValue(kind: FieldKind, value: unknown): unknown {
             .map((entry) => entry.slice(0, MAX_TEXT_LENGTH))
             .slice(0, MAX_LIST_ITEMS)
         : null;
+
+    // A group holds rows, not a reading. Anything sent for its value is dropped
+    // rather than stored, so a client cannot smuggle a blob into a column
+    // nothing reads.
+    case "group":
+      return null;
   }
 }
 
@@ -347,6 +402,15 @@ export function formatValue(field: DashboardField, now: Date): string {
       const items = field.value ?? [];
       if (items.length === 0) return EMPTY;
       return items.join(", ");
+    }
+
+    // A group has no reading of its own, so the honest one-line summary is how
+    // much it holds. The glance has no room to expand it, and listing the
+    // children's values there would misattribute them to the group's label.
+    case "group": {
+      const count = field.children.length;
+      if (count === 0) return EMPTY;
+      return `${count} ${count === 1 ? "field" : "fields"}`;
     }
   }
 }

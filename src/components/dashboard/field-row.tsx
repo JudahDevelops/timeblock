@@ -10,13 +10,19 @@ import {
   MAX_LIST_ITEMS,
   progressFraction,
   progressTone,
+  NESTABLE_FIELD_KINDS,
   VALUE_SCALE_LABELS,
   VALUE_SCALES,
   type DashboardField,
+  type FieldKind,
+  type ValueScale,
 } from "@/lib/dashboard/field";
+import type { GridItem } from "@/lib/dashboard/grid";
 import { deleteField, updateField } from "@/server/actions/dashboards";
 import { cn } from "@/lib/utils";
 
+import { AddField } from "./add-field";
+import { FieldGrid, NESTED_CELL_HEIGHT } from "./field-grid";
 import { CHECKBOX_SIZE, SCALE_TEXT, SCALE_TEXT_SOFT, TONE_FILL } from "./tone";
 import { useInvalidateDashboards } from "./use-dashboards";
 
@@ -36,6 +42,9 @@ export function FieldRow({
   dragging,
   pending,
   resizable,
+  narrow,
+  onAddToGroup,
+  onSaveChildren,
 }: {
   field: DashboardField;
   now: Date;
@@ -46,6 +55,10 @@ export function FieldRow({
   pending?: boolean;
   /** Desktop only — the phone's single column has no free positions to drag to. */
   resizable?: boolean;
+  /** Passed through to a group's own grid, which collapses on a phone too. */
+  narrow?: boolean;
+  onAddToGroup?: (groupId: string, kind: FieldKind) => void;
+  onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -131,27 +144,30 @@ export function FieldRow({
           className="text-ink placeholder:text-ink-faint min-w-0 flex-1 bg-transparent text-sm font-semibold tracking-tight outline-none"
         />
 
-        {/* Every kind now has at least a text size to set, so the gear is no
-            longer limited to the two that carry a unit or a target. */}
-        <button
-          type="button"
-          onClick={() => setSettingsOpen((open) => !open)}
-          aria-label="Field settings"
-          aria-expanded={settingsOpen}
-          className="text-ink-faint hover:text-ink shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        >
-          <svg
-            viewBox="0 0 16 16"
-            className="size-3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            aria-hidden
+        {/* Every kind that draws a value of its own has at least a text size to
+            set. A group draws its children instead, each carrying its own size,
+            so there is nothing here for the gear to change. */}
+        {field.kind === "group" ? null : (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-label="Field settings"
+            aria-expanded={settingsOpen}
+            className="text-ink-faint hover:text-ink shrink-0 p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           >
-            <circle cx="8" cy="8" r="2" />
-            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 16 16"
+              className="size-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              aria-hidden
+            >
+              <circle cx="8" cy="8" r="2" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" />
+            </svg>
+          </button>
+        )}
 
         <button
           type="button"
@@ -186,8 +202,20 @@ export function FieldRow({
         </button>
       </div>
 
-      <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
-        <FieldValueEditor field={field} now={now} save={save} />
+      {/* `px-1` pays for the `-mx-1` a list row uses to bleed its hover
+          highlight to the card's edge — without it every row is 4px wider than
+          this box on each side and the card scrolls sideways. `overflow-x-hidden`
+          then backstops the other cause, a single unbroken word too long to
+          wrap. Nothing here should ever move horizontally. */}
+      <div className="mt-1.5 min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-1">
+        <FieldValueEditor
+          field={field}
+          now={now}
+          save={save}
+          narrow={narrow}
+          onAddToGroup={onAddToGroup}
+          onSaveChildren={onSaveChildren}
+        />
       </div>
 
       {settingsOpen ? (
@@ -221,7 +249,21 @@ type Save = (
 ) => void;
 
 /** The value affordance, chosen by kind — the whole point of picking a type. */
-function FieldValueEditor({ field, now, save }: { field: DashboardField; now: Date; save: Save }) {
+function FieldValueEditor({
+  field,
+  now,
+  save,
+  narrow,
+  onAddToGroup,
+  onSaveChildren,
+}: {
+  field: DashboardField;
+  now: Date;
+  save: Save;
+  narrow?: boolean;
+  onAddToGroup?: (groupId: string, kind: FieldKind) => void;
+  onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
+}) {
   switch (field.kind) {
     case "number":
       return <NumberInput field={field} save={save} />;
@@ -235,7 +277,71 @@ function FieldValueEditor({ field, now, save }: { field: DashboardField; now: Da
       return <CheckboxInput field={field} save={save} />;
     case "list":
       return <ListInput field={field} save={save} />;
+    case "group":
+      return (
+        <GroupSurface
+          field={field}
+          now={now}
+          narrow={narrow}
+          onAddToGroup={onAddToGroup}
+          onSaveChildren={onSaveChildren}
+        />
+      );
   }
+}
+
+/**
+ * A group's own grid, drawn inside the card.
+ *
+ * The same `FieldGrid` the dashboard uses, at a shorter row height — so a client
+ * card can be moved and resized within its group exactly as the group is within
+ * the dashboard.
+ *
+ * This and `field-grid` import each other, which is safe only because neither
+ * touches the other during module evaluation: both references are resolved when
+ * a component renders, by which point both modules have finished loading. The
+ * recursion terminates on the data, not on a depth counter — a group is never
+ * offered inside a group, so `children` is always empty one level down.
+ */
+function GroupSurface({
+  field,
+  now,
+  narrow,
+  onAddToGroup,
+  onSaveChildren,
+}: {
+  field: Extract<DashboardField, { kind: "group" }>;
+  now: Date;
+  narrow?: boolean;
+  onAddToGroup?: (groupId: string, kind: FieldKind) => void;
+  onSaveChildren?: (groupId: string, layout: GridItem[]) => void;
+}) {
+  return (
+    <div className="flex h-full flex-col gap-1.5">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        {field.children.length > 0 ? (
+          <FieldGrid
+            fields={field.children}
+            now={now}
+            narrow={narrow ?? false}
+            cellHeight={NESTED_CELL_HEIGHT}
+            onSave={(layout) => onSaveChildren?.(field.id, layout)}
+          />
+        ) : (
+          <p className="text-ink-faint py-2 text-center text-xs">Nothing in here yet.</p>
+        )}
+      </div>
+
+      {onAddToGroup ? (
+        <AddField
+          compact
+          label="Add to group"
+          kinds={NESTABLE_FIELD_KINDS}
+          onPick={(kind) => onAddToGroup(field.id, kind)}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function NumberInput({
@@ -480,6 +586,72 @@ function CheckboxInput({
   );
 }
 
+/**
+ * One list item, editable where it sits.
+ *
+ * Wrapping is the whole point: an item that ran past the card used to be reached
+ * by dragging the row sideways, inside a card only a few columns wide. So this is
+ * a `contentEditable` span rather than an `input` — an input is a single line by
+ * construction, and a `textarea` would need its height measured from
+ * `scrollHeight` on every keystroke *and* on first paint, which is a ref write
+ * during render the compiler lint rejects. A span simply wraps and is as tall as
+ * its text, with no measuring anywhere.
+ *
+ * `suppressContentEditableWarning` because React will not diff the children of an
+ * element the browser is also editing — which is exactly what we want here: the
+ * DOM owns the text mid-edit, and `key` on the parent restores it if the write
+ * fails.
+ */
+function ListItemInput({
+  value,
+  scale,
+  label,
+  onCommit,
+}: {
+  value: string;
+  scale: ValueScale;
+  label: string;
+  onCommit: (next: string) => void;
+}) {
+  return (
+    <span
+      role="textbox"
+      tabIndex={0}
+      contentEditable
+      suppressContentEditableWarning
+      aria-label={`Edit item in ${label || "list"}`}
+      onBlur={(event) => {
+        const next = event.currentTarget.textContent ?? "";
+        if (next === value) return;
+        onCommit(next);
+      }}
+      onKeyDown={(event) => {
+        // Enter commits rather than opening a second line: the field holds a
+        // list of short items, and a newline inside one has nowhere to go.
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+        if (event.key === "Escape") {
+          event.currentTarget.textContent = value;
+          event.currentTarget.blur();
+        }
+      }}
+      className={cn(
+        // `min-w-0` lets this flex child shrink below its content width, which
+        // is the precondition for wrapping at all; `break-words` then breaks a
+        // run of text too long to fit even so. Without both, a long client name
+        // sets the row's width and the card either scrolls sideways or clips the
+        // text at both ends.
+        "text-ink w-0 min-w-0 flex-1 leading-relaxed break-words whitespace-pre-wrap outline-none",
+        SCALE_TEXT_SOFT[scale],
+      )}
+    >
+      {value}
+    </span>
+  );
+}
+
 function ListInput({
   field,
   save,
@@ -499,18 +671,35 @@ function ListInput({
       {items.length > 0 ? (
         <ul className="mb-1.5 space-y-0.5">
           {items.map((item, index) => (
+            // Keyed by content as well as position. React will not diff the
+            // children of a `contentEditable`, so after a delete the surviving
+            // spans would keep whatever text the browser left in them; changing
+            // the key is what forces them to remount and re-read the row. Safe
+            // for typing, which never re-renders this list — the edit lives in
+            // the DOM until blur.
             <li
-              key={`${item}-${index}`}
-              className="group/item hover:bg-surface-raised -mx-1 flex items-center gap-2 rounded px-1 py-0.5 transition-colors"
+              key={`${index}:${item}`}
+              className="group/item hover:bg-surface-raised -mx-1 flex items-start gap-2 rounded px-1 py-0.5 transition-colors"
             >
-              <span aria-hidden className="text-ink-faint shrink-0 text-xs">
+              <span aria-hidden className="text-ink-faint shrink-0 text-xs leading-relaxed">
                 ·
               </span>
-              <span
-                className={cn("text-ink min-w-0 flex-1 truncate", SCALE_TEXT_SOFT[field.scale])}
-              >
-                {item}
-              </span>
+              <ListItemInput
+                value={item}
+                scale={field.scale}
+                label={field.label}
+                onCommit={(next) => {
+                  // An item emptied out is a deletion. Otherwise typing the text
+                  // away would leave a blank bullet that has to be removed by
+                  // hand anyway.
+                  const trimmed = next.trim();
+                  commit(
+                    trimmed
+                      ? items.map((existing, i) => (i === index ? trimmed : existing))
+                      : items.filter((_, i) => i !== index),
+                  );
+                }}
+              />
               <button
                 type="button"
                 aria-label={`Remove ${item}`}
@@ -525,23 +714,29 @@ function ListInput({
       ) : null}
 
       {items.length < MAX_LIST_ITEMS ? (
-        <input
+        // A `textarea`, not an `input`: a single-line input scrolls sideways by
+        // construction, so a name longer than the card could only be read by
+        // dragging the text through a slot. This wraps instead, like the
+        // committed items directly above it. Enter still commits — `rows={1}`
+        // and the Enter guard keep it behaving as one line that happens to wrap.
+        <textarea
           value={entry}
+          rows={1}
           placeholder="Add an item…"
           aria-label={`Add to ${field.label || "list"}`}
           onChange={(event) => setEntry(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter") return;
+            event.preventDefault();
             const trimmed = entry.trim();
             if (!trimmed) return;
-            event.preventDefault();
             // Cleared straight away so the next item can be typed immediately,
             // rather than waiting for the server to confirm the previous one.
             setEntry("");
             commit([...items, trimmed]);
           }}
           className={cn(
-            "text-ink placeholder:text-ink-faint w-full bg-transparent outline-none",
+            "text-ink placeholder:text-ink-faint field-sizing-content w-full resize-none bg-transparent break-words outline-none",
             SCALE_TEXT_SOFT[field.scale],
           )}
         />

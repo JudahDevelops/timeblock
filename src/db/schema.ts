@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -345,6 +346,21 @@ export const dashboardFields = pgTable(
     /** Denormalised from the parent so every query can scope on it directly. */
     userId: uuid("user_id").notNull(),
 
+    /**
+     * The `group` field this one sits inside, or null at the top level.
+     *
+     * Self-referencing, and deliberately only one level deep — nothing enforces
+     * that in the column, but a group is not offered inside a group, so the tree
+     * stays two ranks tall. That keeps rendering and the layout engine
+     * non-recursive; deeper nesting later is a behaviour change, not a migration.
+     *
+     * `onDelete: "cascade"` because a child has nowhere to live once its group is
+     * gone — leaving it behind would strand it invisibly outside every surface.
+     */
+    parentId: uuid("parent_id").references((): AnyPgColumn => dashboardFields.id, {
+      onDelete: "cascade",
+    }),
+
     label: text("label").notNull().default(""),
     kind: text("kind").notNull(),
 
@@ -379,6 +395,8 @@ export const dashboardFields = pgTable(
   (t) => [
     index("dashboard_fields_dashboard_idx").on(t.dashboardId, t.position),
     index("dashboard_fields_user_idx").on(t.userId),
+    /** Grouping children under their parent is a per-render lookup. */
+    index("dashboard_fields_parent_idx").on(t.parentId),
   ],
 );
 
