@@ -13,8 +13,10 @@ import {
 } from "react";
 
 import { signOut } from "@/server/actions/auth";
+import { createDashboard, deleteDashboard } from "@/server/actions/dashboards";
 import { createPage, deletePage } from "@/server/actions/pages";
 import { StatusWindow } from "@/components/status/status-window";
+import { useToast } from "@/components/shell/toast";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -47,16 +49,19 @@ export function SidebarTrigger() {
 }
 
 export type SidebarPage = { id: string; title: string; emoji: string | null };
+export type SidebarDashboard = { id: string; name: string; emoji: string | null };
 
 export function AppShell({
   email,
   todayParam,
   pages,
+  dashboards,
   children,
 }: {
   email: string;
   todayParam: string;
   pages: SidebarPage[];
+  dashboards: SidebarDashboard[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -79,7 +84,7 @@ export function AppShell({
     <OpenSidebar.Provider value={openMenu}>
       <div className="flex flex-1 overflow-hidden">
         <aside className="border-line hidden w-56 shrink-0 flex-col border-r md:flex">
-          <Nav email={email} todayParam={todayParam} pages={pages} />
+          <Nav email={email} todayParam={todayParam} pages={pages} dashboards={dashboards} />
         </aside>
 
         {open ? (
@@ -98,7 +103,13 @@ export function AppShell({
               aria-label="Menu"
               className="bg-surface border-line absolute inset-y-0 left-0 flex w-64 animate-[slide-in-left_160ms_ease-out] flex-col border-r outline-none"
             >
-              <Nav email={email} todayParam={todayParam} pages={pages} onNavigate={close} />
+              <Nav
+                email={email}
+                todayParam={todayParam}
+                pages={pages}
+                dashboards={dashboards}
+                onNavigate={close}
+              />
             </div>
           </div>
         ) : null}
@@ -116,11 +127,13 @@ function Nav({
   email,
   todayParam,
   pages,
+  dashboards,
   onNavigate,
 }: {
   email: string;
   todayParam: string;
   pages: SidebarPage[];
+  dashboards: SidebarDashboard[];
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -139,15 +152,9 @@ function Nav({
         >
           Calendar
         </NavLink>
-        <NavLink
-          href="/dashboards"
-          active={pathname.startsWith("/dashboards")}
-          onNavigate={onNavigate}
-        >
-          Dashboards
-        </NavLink>
       </nav>
 
+      <DashboardsSection dashboards={dashboards} onNavigate={onNavigate} />
       <PagesSection pages={pages} onNavigate={onNavigate} />
 
       {/* Bottom section: theme, integrations, account */}
@@ -180,6 +187,175 @@ function Nav({
           </form>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The dashboards list, mirroring `PagesSection` so the sidebar has one
+ * interaction vocabulary: a disclosure triangle, an inline +, right-click to
+ * delete. Kept separate rather than generalised — the two differ in their
+ * routes, their empty copy and their delete semantics, and a shared component
+ * taking six props to paper over that would be harder to read than both.
+ */
+function DashboardsSection({
+  dashboards,
+  onNavigate,
+}: {
+  dashboards: SidebarDashboard[];
+  onNavigate?: () => void;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const toast = useToast();
+  const [expanded, setExpanded] = useState(pathname.startsWith("/dashboards"));
+  const [pending, startTransition] = useTransition();
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** Hidden the moment delete is clicked; restored if the write fails. */
+  const [deleted, setDeleted] = useState<string[]>([]);
+
+  const handleCreate = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setExpanded(true);
+    startTransition(async () => {
+      try {
+        const row = await createDashboard({});
+        router.push(`/dashboards/${row.id}`);
+        onNavigate?.();
+      } catch {
+        toast("Could not create the dashboard.");
+      }
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    setContextMenu(null);
+    setDeleted((current) => [...current, id]);
+
+    void deleteDashboard(id)
+      .then(() => router.refresh())
+      .catch(() => {
+        // Restored only on failure. On success the id stays in `deleted` until
+        // the refreshed props arrive without it — clearing it here instead would
+        // unhide the row for the frames between the write landing and the
+        // repaint, flashing back a dashboard the user just removed.
+        setDeleted((current) => current.filter((entry) => entry !== id));
+        toast("Could not delete that dashboard.");
+      });
+
+    // Navigate away only from the one being deleted; the index is still valid.
+    if (pathname === `/dashboards/${id}`) {
+      router.push("/dashboards");
+      onNavigate?.();
+    }
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("click", handleClick);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("click", handleClick);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [contextMenu]);
+
+  /**
+   * Hidden rows are only those the server still sends. An id the refreshed list
+   * has already dropped needs no hiding, so it stops being consulted — derived
+   * here rather than cleared in an effect, which would both flash and trip
+   * `react-hooks/set-state-in-effect`.
+   */
+  const visible = dashboards.filter((dashboard) => !deleted.includes(dashboard.id));
+
+  return (
+    <div className="mt-4 flex shrink-0 flex-col">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="text-ink-muted hover:text-ink flex flex-1 items-center gap-1 px-2 py-1 text-xs font-medium tracking-wider uppercase transition-colors"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+          Dashboards
+        </button>
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={pending}
+          aria-label="New dashboard"
+          className="text-ink-muted hover:text-ink hover:bg-surface-raised rounded p-1 transition-colors disabled:opacity-50"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {visible.length === 0 ? (
+            <p className="text-ink-faint px-2 py-1 text-xs">No dashboards yet</p>
+          ) : (
+            visible.map((dashboard) => {
+              const active = pathname === `/dashboards/${dashboard.id}`;
+              return (
+                <Link
+                  key={dashboard.id}
+                  href={`/dashboards/${dashboard.id}`}
+                  onClick={onNavigate}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({ id: dashboard.id, x: event.clientX, y: event.clientY });
+                  }}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active
+                      ? "bg-surface-raised text-ink font-medium"
+                      : "text-ink-muted hover:text-ink hover:bg-surface-raised",
+                  )}
+                >
+                  <span className="shrink-0 text-sm" aria-hidden>
+                    {dashboard.emoji ?? "📊"}
+                  </span>
+                  <span className="min-w-0 truncate">{dashboard.name || "Untitled"}</span>
+                </Link>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+
+      {contextMenu ? (
+        <RowContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onDelete={() => handleDelete(contextMenu.id)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -304,7 +480,7 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
       ) : null}
 
       {contextMenu ? (
-        <PageContextMenu
+        <RowContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onDelete={() => handleDelete(contextMenu.pageId)}
@@ -314,7 +490,7 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
   );
 }
 
-function PageContextMenu({ x, y, onDelete }: { x: number; y: number; onDelete: () => void }) {
+function RowContextMenu({ x, y, onDelete }: { x: number; y: number; onDelete: () => void }) {
   return (
     <div
       className="bg-surface border-line fixed z-50 min-w-[140px] rounded-md border py-1 shadow-lg"

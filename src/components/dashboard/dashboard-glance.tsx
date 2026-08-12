@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 
-import { formatValue, progressFraction, type DashboardField } from "@/lib/dashboard/field";
+import {
+  formatValue,
+  progressFraction,
+  progressTone,
+  type DashboardField,
+} from "@/lib/dashboard/field";
+import { cn } from "@/lib/utils";
+
+import { TONE_FILL } from "./tone";
 import type { DashboardDetail } from "@/server/queries/dashboards";
 
 /**
@@ -51,6 +59,7 @@ export function DashboardGlance({ dashboard, now }: { dashboard: DashboardDetail
 function GlanceRow({ field, now }: { field: DashboardField; now: Date }) {
   if (field.kind === "progress") {
     const fraction = progressFraction(field);
+    const tone = progressTone(fraction, field.config.invert);
 
     return (
       <div>
@@ -63,7 +72,10 @@ function GlanceRow({ field, now }: { field: DashboardField; now: Date }) {
           </dd>
         </div>
         <div className="bg-surface-sunken mt-1.5 h-1.5 w-full overflow-hidden rounded-full">
-          <div className="bg-now h-full rounded-full" style={{ width: `${fraction * 100}%` }} />
+          <div
+            className={cn("h-full rounded-full", TONE_FILL[tone])}
+            style={{ width: `${fraction * 100}%` }}
+          />
         </div>
       </div>
     );

@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { ToastProvider } from "@/components/shell/toast";
 import { toDateParam } from "@/lib/date";
 import { requireUser, type SessionUser } from "@/server/auth";
+import { getDashboards } from "@/server/queries/dashboards";
 import { getPages } from "@/server/queries/pages";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,7 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  const pages = await getPages(user.id);
+  // In parallel: two independent reads, and Supabase is ~270ms away.
+  const [pages, dashboards] = await Promise.all([getPages(user.id), getDashboards(user.id)]);
 
   return (
     <Providers>
@@ -26,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           email={user.email}
           todayParam={toDateParam(new Date())}
           pages={pages.map((p) => ({ id: p.id, title: p.title, emoji: p.emoji }))}
+          dashboards={dashboards.map((d) => ({ id: d.id, name: d.name, emoji: d.emoji }))}
         >
           {children}
         </AppShell>

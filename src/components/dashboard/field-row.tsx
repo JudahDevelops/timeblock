@@ -9,11 +9,13 @@ import {
   formatRelativeDate,
   MAX_LIST_ITEMS,
   progressFraction,
+  progressTone,
   type DashboardField,
 } from "@/lib/dashboard/field";
 import { deleteField, updateField } from "@/server/actions/dashboards";
 import { cn } from "@/lib/utils";
 
+import { TONE_FILL } from "./tone";
 import { useInvalidateDashboards } from "./use-dashboards";
 
 /**
@@ -28,15 +30,20 @@ export function FieldRow({
   field,
   now,
   onDragStart,
+  onResizeStart,
   dragging,
   pending,
+  resizable,
 }: {
   field: DashboardField;
   now: Date;
   onDragStart?: (event: React.PointerEvent) => void;
+  onResizeStart?: (event: React.PointerEvent) => void;
   dragging?: boolean;
   /** Drawn but not yet inserted: visible, and inert until it has a real id. */
   pending?: boolean;
+  /** Desktop only — the phone's single column has no free positions to drag to. */
+  resizable?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -69,15 +76,15 @@ export function FieldRow({
   if (deleted) return null;
 
   return (
-    <li
+    <div
       data-field-id={field.id}
       className={cn(
         // `surface-raised`, not `surface-sunken`: sunken is identical to surface
         // in the dark palette, so hovering a row there changed nothing at all.
-        "border-line bg-surface group relative rounded-lg border px-3 py-2.5",
+        "border-line bg-surface group relative flex h-full flex-col overflow-hidden rounded-lg border px-3 py-2.5",
         // `ink-faint` on hover matches the Add-field button's border treatment.
         "hover:border-ink-faint hover:bg-surface-raised transition-colors",
-        dragging && "border-ink-faint bg-surface-raised opacity-60 shadow-lg",
+        dragging && "border-ink-faint bg-surface-raised shadow-lg",
         // Inert while inserting: pointer events off is what stops a click from
         // naming a row id that does not exist on the server yet.
         pending && "pointer-events-none opacity-60",
@@ -172,12 +179,30 @@ export function FieldRow({
         </button>
       </div>
 
-      <div className="mt-1.5">
+      <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
         <FieldValueEditor field={field} now={now} save={save} />
       </div>
 
       {settingsOpen ? <FieldSettings field={field} save={save} /> : null}
-    </li>
+
+      {resizable && onResizeStart ? (
+        <button
+          type="button"
+          aria-label={`Resize ${field.label || "field"}`}
+          onPointerDown={onResizeStart}
+          // Bottom-right, the corner every resizable thing has been grabbed by
+          // for thirty years. Revealed on hover so a static dashboard is not
+          // covered in handles.
+          className="text-ink-faint hover:text-ink-muted absolute right-0.5 bottom-0.5 cursor-nwse-resize touch-none p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <svg viewBox="0 0 10 10" className="size-2.5" fill="currentColor" aria-hidden>
+            <circle cx="8" cy="8" r="1" />
+            <circle cx="8" cy="4.5" r="1" />
+            <circle cx="4.5" cy="8" r="1" />
+          </svg>
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -264,6 +289,7 @@ function ProgressInput({
   }, [field.value]);
 
   const fraction = progressFraction(field);
+  const tone = progressTone(fraction, field.config.invert);
 
   return (
     <div>
@@ -304,7 +330,10 @@ function ProgressInput({
         aria-label={field.label || "Progress"}
       >
         <div
-          className="bg-now h-full rounded-full transition-[width] duration-300"
+          className={cn(
+            "h-full rounded-full transition-[width,background-color] duration-300",
+            TONE_FILL[tone],
+          )}
           style={{ width: `${fraction * 100}%` }}
         />
       </div>
@@ -525,6 +554,19 @@ function FieldSettings({ field, save }: { field: DashboardField; save: Save }) {
           placeholder="km"
           onCommit={(value) => save({ config: { ...field.config, suffix: value } }, () => {})}
         />
+        {/* Which end is the good end. Phrased as the question rather than as
+            "invert", which says nothing about what it will do to the bar. */}
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={field.config.invert ?? false}
+            onChange={(event) =>
+              save({ config: { ...field.config, invert: event.target.checked } }, () => {})
+            }
+            className="accent-now size-3.5 cursor-pointer"
+          />
+          <span className="text-ink-faint text-xs">Lower is better</span>
+        </label>
       </div>
     );
   }

@@ -10,6 +10,7 @@ import {
   isFieldKind,
   parseField,
   progressFraction,
+  progressTone,
 } from "./field";
 import type { DashboardField } from "./field";
 
@@ -29,6 +30,21 @@ const at = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0, 0, 
 describe("parseField", () => {
   it("returns null for a kind it does not recognise", () => {
     expect(row({ kind: "sparkline" })).toBeNull();
+  });
+
+  it("carries the grid box through", () => {
+    expect(row({ kind: "text", gridX: 4, gridY: 2, gridW: 6, gridH: 3 })).toMatchObject({
+      x: 4,
+      y: 2,
+      w: 6,
+      h: 3,
+    });
+  });
+
+  it("falls back to a single column for a row written before the grid existed", () => {
+    // `position` as `y` keeps pre-grid fields readable instead of stacking every
+    // one of them at the origin, where they would all collide.
+    expect(row({ kind: "text", position: 3 })).toMatchObject({ x: 0, y: 3 });
   });
 
   it("reads a number field with its prefix and suffix", () => {
@@ -130,6 +146,16 @@ describe("coerceConfig", () => {
   it("gives the kinds without settings an empty config", () => {
     expect(coerceConfig("text", { prefix: "$" })).toEqual({});
   });
+
+  it("only lets a real boolean invert the bar", () => {
+    expect(coerceConfig("progress", { target: 50, invert: true })).toEqual({
+      target: 50,
+      invert: true,
+    });
+    // A truthy string out of a jsonb blob must not flip the colours.
+    expect(coerceConfig("progress", { target: 50, invert: "yes" })).toEqual({ target: 50 });
+    expect(coerceConfig("progress", { target: 50, invert: false })).toEqual({ target: 50 });
+  });
 });
 
 describe("progressFraction", () => {
@@ -140,6 +166,10 @@ describe("progressFraction", () => {
     id: "p",
     label: "Progress",
     position: 0,
+    x: 0,
+    y: 0,
+    w: 4,
+    h: 1,
     kind: "progress",
     config: { target },
     value,
@@ -159,10 +189,53 @@ describe("progressFraction", () => {
   });
 });
 
+describe("progressTone", () => {
+  it("climbs from low through mid to high as the bar fills", () => {
+    expect(progressTone(0)).toBe("low");
+    expect(progressTone(0.2)).toBe("low");
+    expect(progressTone(0.5)).toBe("mid");
+    expect(progressTone(0.9)).toBe("high");
+    expect(progressTone(1)).toBe("high");
+  });
+
+  it("puts the boundaries in the higher band", () => {
+    expect(progressTone(1 / 3)).toBe("mid");
+    expect(progressTone(2 / 3)).toBe("high");
+  });
+
+  it("reads the other way for a field counting something down", () => {
+    // "Budget spent": an empty bar is the good state, a full one is the warning.
+    expect(progressTone(0, true)).toBe("high");
+    expect(progressTone(1, true)).toBe("low");
+    expect(progressTone(0.5, true)).toBe("mid");
+  });
+
+  it("means the good end by `high`, never simply the full end", () => {
+    // The property the callers rely on: they paint `high` green without knowing
+    // which direction the field counts.
+    for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+      const upward = progressTone(fraction, false);
+      const downward = progressTone(1 - fraction, true);
+      expect(downward).toBe(upward);
+    }
+  });
+});
+
 describe("formatValue", () => {
   const now = at(2026, 8, 11);
   const build = (over: Partial<DashboardField> & Pick<DashboardField, "kind">) =>
-    ({ id: "f", label: "F", position: 0, config: {}, value: null, ...over }) as DashboardField;
+    ({
+      id: "f",
+      label: "F",
+      position: 0,
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 1,
+      config: {},
+      value: null,
+      ...over,
+    }) as DashboardField;
 
   it("renders a number with prefix, separators and unit", () => {
     expect(formatValue(build({ kind: "number", config: { prefix: "$" }, value: 4200 }), now)).toBe(

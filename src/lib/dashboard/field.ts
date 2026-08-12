@@ -33,7 +33,19 @@ export const FIELD_KIND_LABELS: Record<FieldKind, { label: string; hint: string 
 };
 
 export type NumberConfig = { prefix?: string; suffix?: string; decimals?: number };
-export type ProgressConfig = { target: number; suffix?: string };
+export type ProgressConfig = {
+  target: number;
+  suffix?: string;
+  /**
+   * Which end of the bar is the good end.
+   *
+   * Filling up is usually progress — 30 of 120km run — so the default reads low
+   * as bad. But a field can just as easily count something you want to keep down
+   * (budget spent, weight to lose), where a full bar is the warning. Per-field
+   * because the machinery has no idea what any of these mean.
+   */
+  invert?: boolean;
+};
 
 /**
  * A field, discriminated on `kind`.
@@ -41,7 +53,20 @@ export type ProgressConfig = { target: number; suffix?: string };
  * `value` is nullable in every variant: a field that exists but has never been
  * filled in is a normal state, not an error. It reads as "—" and stays editable.
  */
-export type DashboardField = { id: string; label: string; position: number } & FieldValue;
+export type DashboardField = {
+  id: string;
+  label: string;
+  position: number;
+  /** Grid box, in columns and rows. See `grid.ts` for what the units mean. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} & FieldValue;
+
+/** A third of the width and one row: what a new field is worth before it holds anything. */
+export const DEFAULT_FIELD_W = 4;
+export const DEFAULT_FIELD_H = 1;
 
 export type FieldValue =
   | { kind: "number"; config: NumberConfig; value: number | null }
@@ -81,10 +106,25 @@ export function parseField(row: {
   kind: string;
   config: unknown;
   value: unknown;
+  gridX?: number;
+  gridY?: number;
+  gridW?: number;
+  gridH?: number;
 }): DashboardField | null {
   if (!isFieldKind(row.kind)) return null;
 
-  const base = { id: row.id, label: row.label, position: row.position };
+  const base = {
+    id: row.id,
+    label: row.label,
+    position: row.position,
+    // Optional so the mapper stays usable from a caller that has not selected
+    // the layout columns. Falling back to `position` keeps fields written before
+    // the grid existed in a sane single column rather than stacked at the origin.
+    x: row.gridX ?? 0,
+    y: row.gridY ?? row.position,
+    w: row.gridW ?? DEFAULT_FIELD_W,
+    h: row.gridH ?? DEFAULT_FIELD_H,
+  };
   const config = asRecord(row.config);
 
   switch (row.kind) {
@@ -199,6 +239,9 @@ export function coerceConfig(kind: FieldKind, config: unknown): unknown {
       return stripUndefined({
         target: positiveOr(asFiniteNumber(record.target), 100),
         suffix: asShortString(record.suffix),
+        // Only a real `true` survives. Anything else means "not inverted", so a
+        // truthy string out of a jsonb blob cannot silently flip the colours.
+        invert: record.invert === true ? true : undefined,
       });
 
     default:
@@ -214,6 +257,27 @@ export const MAX_LABEL_LENGTH = 120;
 export function progressFraction(field: Extract<DashboardField, { kind: "progress" }>): number {
   if (field.value === null) return 0;
   return Math.max(0, Math.min(1, field.value / field.config.target));
+}
+
+/** Where the thresholds sit. Two thirds is "nearly there", one third "barely started". */
+const TONE_HIGH = 2 / 3;
+const TONE_LOW = 1 / 3;
+
+export type ProgressTone = "low" | "mid" | "high";
+
+/**
+ * Severity as a colour, so a bar is readable without reading the number.
+ *
+ * `high` always means the good end, never the full end — `invert` swaps which is
+ * which. That indirection is the whole point: the caller paints `high` green
+ * without needing to know whether the field counts up to something good or down
+ * from something bad.
+ */
+export function progressTone(fraction: number, invert = false): ProgressTone {
+  const good = invert ? 1 - fraction : fraction;
+  if (good >= TONE_HIGH) return "high";
+  if (good >= TONE_LOW) return "mid";
+  return "low";
 }
 
 /**

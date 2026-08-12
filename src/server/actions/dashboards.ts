@@ -1,6 +1,7 @@
 "use server";
 
 import { and, eq, isNull, max, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { revalidatePath } from "next/cache";
 
 import { db } from "@/db";
@@ -8,10 +9,13 @@ import { dashboardFields, dashboards } from "@/db/schema";
 import {
   coerceConfig,
   coerceValue,
+  DEFAULT_FIELD_H,
+  DEFAULT_FIELD_W,
   defaultsFor,
   isFieldKind,
   MAX_LABEL_LENGTH,
 } from "@/lib/dashboard/field";
+import { clampBox, firstFreeSlot } from "@/lib/dashboard/grid";
 import { requireUserId } from "@/server/auth";
 
 const MAX_NAME_LENGTH = 120;
@@ -101,12 +105,23 @@ export async function createField(input: { dashboardId: string; kind: string; la
 
   if (!parent) throw new Error("Dashboard not found");
 
-  const [{ value: highest } = { value: null }] = await db
-    .select({ value: max(dashboardFields.position) })
+  // The existing boxes, so the new field lands in a gap rather than on top of
+  // something. One extra read, but placing blind means every new field starts
+  // colliding and the first thing the user sees is a layout shuffling itself.
+  const existing = await db
+    .select({
+      id: dashboardFields.id,
+      x: dashboardFields.gridX,
+      y: dashboardFields.gridY,
+      w: dashboardFields.gridW,
+      h: dashboardFields.gridH,
+      position: dashboardFields.position,
+    })
     .from(dashboardFields)
     .where(eq(dashboardFields.dashboardId, input.dashboardId));
 
-  const position = (highest ?? -1) + 1;
+  const position = existing.reduce((highest, row) => Math.max(highest, row.position), -1) + 1;
+  const slot = firstFreeSlot(existing, DEFAULT_FIELD_W, DEFAULT_FIELD_H);
   const { config, value } = defaultsFor(input.kind);
 
   const [row] = await db
@@ -119,9 +134,10 @@ export async function createField(input: { dashboardId: string; kind: string; la
       config,
       value,
       position,
-      // Seeded so the phase-2b grid has a sane starting layout for fields created
-      // before it existed, rather than stacking every one of them at the origin.
-      gridY: position,
+      gridX: slot.x,
+      gridY: slot.y,
+      gridW: DEFAULT_FIELD_W,
+      gridH: DEFAULT_FIELD_H,
     })
     .returning({ id: dashboardFields.id });
 
@@ -178,22 +194,46 @@ export async function deleteField(id: string) {
 }
 
 /**
- * Rewrites the order of every field on a dashboard.
+ * Writes a whole grid layout at once.
  *
- * One statement rather than a write per field: a drag can move many positions at
- * once, and Supabase is far enough away that a loop here would be visible as lag.
+ * One statement with four `CASE` expressions rather than a write per field: a
+ * drag can move half a dashboard, and Supabase is ~270ms away, so a loop here
+ * would turn one gesture into a second of round trips.
+ *
+ * The boxes are re-clamped server-side. `normalise` already ran on the client,
+ * but that is a rendering concern — this is the trust boundary, and nothing
+ * stops a crafted call asking for a field 400 columns wide.
  */
-export async function reorderFields(input: { dashboardId: string; orderedIds: string[] }) {
+export async function updateFieldLayout(input: {
+  dashboardId: string;
+  layout: { id: string; x: number; y: number; w: number; h: number }[];
+}) {
   const userId = await requireUserId();
-  if (input.orderedIds.length === 0) return;
+  if (input.layout.length === 0) return;
 
-  const cases = input.orderedIds.map(
-    (id, index) => sql`when ${dashboardFields.id} = ${id}::uuid then ${index}::int`,
-  );
+  const boxes = input.layout.map((entry) => ({ id: entry.id, ...clampBox(entry) }));
+
+  const caseFor = (pick: (box: (typeof boxes)[number]) => number, column: AnyPgColumn) => {
+    const cases = boxes.map(
+      (box) => sql`when ${dashboardFields.id} = ${box.id}::uuid then ${pick(box)}::int`,
+    );
+    return sql`case ${sql.join(cases, sql` `)} else ${column} end`;
+  };
 
   await db
     .update(dashboardFields)
-    .set({ position: sql`case ${sql.join(cases, sql` `)} else ${dashboardFields.position} end` })
+    .set({
+      gridX: caseFor((box) => box.x, dashboardFields.gridX),
+      gridY: caseFor((box) => box.y, dashboardFields.gridY),
+      gridW: caseFor((box) => box.w, dashboardFields.gridW),
+      gridH: caseFor((box) => box.h, dashboardFields.gridH),
+      // Kept in step with the visual order so the phone's single column and the
+      // pause-menu glance, which both read `position`, follow the grid.
+      position: caseFor(
+        (box) => boxes.filter((o) => o.y < box.y || (o.y === box.y && o.x < box.x)).length,
+        dashboardFields.position,
+      ),
+    })
     .where(
       and(eq(dashboardFields.dashboardId, input.dashboardId), eq(dashboardFields.userId, userId)),
     );
