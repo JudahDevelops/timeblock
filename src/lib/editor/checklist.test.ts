@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { extractChecklist, firstUnchecked, itemAfter } from "./checklist";
+import {
+  extractChecklist,
+  firstUnchecked,
+  itemAfter,
+  itemBefore,
+  resolveCursor,
+} from "./checklist";
 import type { BlockDocument } from "./document";
 
 /** Blocks are shaped like BlockNote's, cast in once so the tests stay readable. */
@@ -130,5 +136,60 @@ describe("itemAfter", () => {
   it("returns null when the id is not in the list", () => {
     const items = extractChecklist(doc([item("a", "Only")]));
     expect(itemAfter(items, "ghost")).toBeNull();
+  });
+});
+
+describe("itemBefore", () => {
+  it("returns the preceding item even when it is already checked", () => {
+    const items = extractChecklist(
+      doc([item("a", "First"), item("b", "Second", true), item("c", "Third")]),
+    );
+    expect(itemBefore(items, "c")?.id).toBe("b");
+  });
+
+  it("returns null at the start of the list", () => {
+    const items = extractChecklist(doc([item("a", "Only")]));
+    expect(itemBefore(items, "a")).toBeNull();
+  });
+
+  it("returns null when the id is not in the list", () => {
+    const items = extractChecklist(doc([item("a", "Only")]));
+    expect(itemBefore(items, "ghost")).toBeNull();
+  });
+});
+
+describe("resolveCursor", () => {
+  const items = extractChecklist(
+    doc([item("a", "First", true), item("b", "Second"), item("c", "Third")]),
+  );
+
+  it("falls back to first unchecked when nothing is pinned", () => {
+    expect(resolveCursor(items, null)?.id).toBe("b");
+  });
+
+  it("honours a pinned item over the default", () => {
+    expect(resolveCursor(items, "c")?.id).toBe("c");
+  });
+
+  it("holds a pin on an item the user has already ticked", () => {
+    // Ticking the pinned box must not advance the cursor on its own: the user
+    // should see what they just finished until they move it deliberately.
+    expect(resolveCursor(items, "a")?.id).toBe("a");
+  });
+
+  it("falls back when the pinned item has been deleted", () => {
+    // The id lives in jsonb with nothing enforcing it, so a stale pin is normal
+    // rather than exceptional — it must degrade to the default, not to nothing.
+    expect(resolveCursor(items, "deleted")?.id).toBe("b");
+  });
+
+  it("returns null when everything is checked and nothing is pinned", () => {
+    const done = extractChecklist(doc([item("a", "First", true)]));
+    expect(resolveCursor(done, null)).toBeNull();
+  });
+
+  it("still resolves a live pin when every item is checked", () => {
+    const done = extractChecklist(doc([item("a", "First", true), item("b", "Second", true)]));
+    expect(resolveCursor(done, "b")?.id).toBe("b");
   });
 });

@@ -29,6 +29,7 @@ export async function getStatusEvents(
       endsAt: events.endsAt,
       allDay: events.allDay,
       body: events.body,
+      cursorItemId: events.cursorItemId,
     })
     .from(events)
     .where(

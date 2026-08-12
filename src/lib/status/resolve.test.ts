@@ -21,6 +21,7 @@ const block = (over: Partial<StatusEvent> & Pick<StatusEvent, "id">): StatusEven
   endsAt: at(10),
   allDay: false,
   body: [] as BlockDocument,
+  cursorItemId: null,
   ...over,
 });
 
@@ -209,5 +210,89 @@ describe("resolveStatus — clear", () => {
   it("reports an empty day", () => {
     const view = resolveStatus([], at(10));
     expect(view).toEqual({ kind: "clear", blocksToday: 0 });
+  });
+});
+
+describe("resolveStatus — cursor override", () => {
+  const body = checklist(
+    ["a", "Draft the intro", true],
+    ["b", "Outline the migration", false],
+    ["c", "Review", false],
+  );
+
+  it("shows the pinned item instead of the first unchecked one", () => {
+    const view = resolveStatus(
+      [block({ id: "deep", startsAt: at(9), endsAt: at(11), body, cursorItemId: "c" })],
+      at(10),
+    );
+
+    expect(view.kind).toBe("running");
+    if (view.kind !== "running") return;
+    expect(view.current?.id).toBe("c");
+    expect(view.block.cursorPinned).toBe(true);
+  });
+
+  it("reads `next` relative to the pin, not to the default", () => {
+    const view = resolveStatus(
+      [block({ id: "deep", startsAt: at(9), endsAt: at(11), body, cursorItemId: "a" })],
+      at(10),
+    );
+
+    if (view.kind !== "running") throw new Error("expected running");
+    expect(view.current?.id).toBe("a");
+    expect(view.nextItem?.id).toBe("b");
+  });
+
+  it("falls back to the default and reports itself unpinned when the pin is stale", () => {
+    // The UI offers "clear the override" only when `cursorPinned` is true, so a
+    // dead pin must not leave that control showing with nothing behind it.
+    const view = resolveStatus(
+      [block({ id: "deep", startsAt: at(9), endsAt: at(11), body, cursorItemId: "gone" })],
+      at(10),
+    );
+
+    if (view.kind !== "running") throw new Error("expected running");
+    expect(view.current?.id).toBe("b");
+    expect(view.block.cursorPinned).toBe(false);
+  });
+
+  it("is unpinned when no override is set", () => {
+    const view = resolveStatus(
+      [block({ id: "deep", startsAt: at(9), endsAt: at(11), body })],
+      at(10),
+    );
+
+    if (view.kind !== "running") throw new Error("expected running");
+    expect(view.block.cursorPinned).toBe(false);
+  });
+
+  it("honours the pin while overrunning", () => {
+    const view = resolveStatus(
+      [block({ id: "a", startsAt: at(9), endsAt: at(10), body, cursorItemId: "c" })],
+      at(10, 5),
+    );
+
+    expect(view.kind).toBe("overrunning");
+    if (view.kind !== "overrunning") return;
+    expect(view.current?.id).toBe("c");
+  });
+
+  it("does not let a pin on a ticked item invent an overrun", () => {
+    // Everything is done; the block ended. A cursor parked on a checked box must
+    // not claim there is work left, or the window would never go quiet.
+    const view = resolveStatus(
+      [
+        block({
+          id: "a",
+          startsAt: at(9),
+          endsAt: at(10),
+          body: checklist(["a", "Done", true], ["b", "Also done", true]),
+          cursorItemId: "a",
+        }),
+      ],
+      at(10, 5),
+    );
+
+    expect(view.kind).toBe("clear");
   });
 });

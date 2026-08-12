@@ -50,6 +50,13 @@
       "when": 1786518688836,
       "tag": "0006_fuzzy_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786519889259,
+      "tag": "0007_plain_freak",
+      "breakpoints": true
     }
   ]
 }

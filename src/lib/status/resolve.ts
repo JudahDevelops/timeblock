@@ -1,4 +1,4 @@
-import { extractChecklist, firstUnchecked, itemAfter } from "@/lib/editor/checklist";
+import { extractChecklist, firstUnchecked, itemAfter, resolveCursor } from "@/lib/editor/checklist";
 import type { ChecklistItem } from "@/lib/editor/checklist";
 import type { BlockDocument } from "@/lib/editor/document";
 
@@ -22,6 +22,8 @@ export type StatusEvent = {
   endsAt: Date;
   allDay: boolean;
   body: BlockDocument;
+  /** Pinned checklist item, or null to follow the default. */
+  cursorItemId: string | null;
 };
 
 export type StatusBlock = {
@@ -36,6 +38,13 @@ export type StatusBlock = {
   items: ChecklistItem[];
   doneCount: number;
   totalCount: number;
+  /**
+   * True when `current` came from a pinned cursor rather than the default.
+   *
+   * A stale pin resolves to the default and reports false, so the UI offers to
+   * clear an override only when there is a live one to clear.
+   */
+  cursorPinned: boolean;
 };
 
 export type NextBlock = {
@@ -107,6 +116,10 @@ export function resolveStatus(events: StatusEvent[], now: Date): StatusView {
 
   if (justEnded) {
     const items = extractChecklist(justEnded.body);
+    // `firstUnchecked` and not `resolveCursor`: overrunning is a claim about
+    // work genuinely left undone, so it must not be triggered by a cursor parked
+    // on an item the user already ticked. Once the state is entered, `withItems`
+    // still honours the pin for *which* item to show.
     if (firstUnchecked(items)) {
       return withItems("overrunning", justEnded, timed, now);
     }
@@ -130,11 +143,12 @@ function withItems(
   now: Date,
 ): StatusView {
   const items = extractChecklist(event.body);
-  const current = firstUnchecked(items);
+  const current = resolveCursor(items, event.cursorItemId);
+  const pinned = current !== null && current.id === event.cursorItemId;
 
   return {
     kind,
-    block: toBlock(event, items, now),
+    block: toBlock(event, items, now, pinned),
     current,
     nextItem: current ? itemAfter(items, current.id) : null,
     nextBlock: nextAfter(timed, now),
@@ -142,7 +156,12 @@ function withItems(
   };
 }
 
-function toBlock(event: StatusEvent, items: ChecklistItem[], now: Date): StatusBlock {
+function toBlock(
+  event: StatusEvent,
+  items: ChecklistItem[],
+  now: Date,
+  cursorPinned: boolean,
+): StatusBlock {
   const start = event.startsAt.getTime();
   const end = event.endsAt.getTime();
   const elapsedMs = Math.max(0, now.getTime() - start);
@@ -160,6 +179,7 @@ function toBlock(event: StatusEvent, items: ChecklistItem[], now: Date): StatusB
     items,
     doneCount: items.filter((item) => item.checked).length,
     totalCount: items.length,
+    cursorPinned,
   };
 }
 

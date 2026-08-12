@@ -1,0 +1,1 @@
+ALTER TABLE "events" ADD COLUMN "cursor_item_id" text;

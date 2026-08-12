@@ -44,6 +44,39 @@ export function itemAfter(items: ChecklistItem[], currentId: string): ChecklistI
   return items[index + 1] ?? null;
 }
 
+/** The item before `current`, checked or not. The mirror of `itemAfter`. */
+export function itemBefore(items: ChecklistItem[], currentId: string): ChecklistItem | null {
+  const index = items.findIndex((item) => item.id === currentId);
+  if (index <= 0) return null;
+  return items[index - 1] ?? null;
+}
+
+/**
+ * The item the status window should treat as current.
+ *
+ * A pinned cursor wins over the default, which is the whole point of the
+ * override: the user has said "I am on this one" and a ticked box further up the
+ * list must not drag the window back. But the pin is a block id living inside
+ * jsonb with nothing enforcing it, so a cursor naming an item that no longer
+ * exists falls back to first-unchecked rather than showing nothing — a deleted
+ * line should not leave the window blank until someone thinks to clear it.
+ *
+ * Deliberately does *not* skip a checked item: pinning one and ticking it should
+ * leave the cursor where it was put, so the user can see what they just
+ * completed before moving on. Advancing is an explicit gesture, not a side
+ * effect of ticking.
+ */
+export function resolveCursor(
+  items: ChecklistItem[],
+  cursorItemId: string | null,
+): ChecklistItem | null {
+  if (cursorItemId) {
+    const pinned = items.find((item) => item.id === cursorItemId);
+    if (pinned) return pinned;
+  }
+  return firstUnchecked(items);
+}
+
 function walk(blocks: unknown, items: ChecklistItem[]): void {
   if (!Array.isArray(blocks)) return;
 

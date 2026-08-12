@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { DashboardGlance } from "@/components/dashboard/dashboard-glance";
 import { useDashboards } from "@/components/dashboard/use-dashboards";
+import { itemAfter, itemBefore } from "@/lib/editor/checklist";
 import type { ChecklistItem } from "@/lib/editor/checklist";
 import { formatDuration, formatSpan } from "@/lib/status/format";
-import type { StatusView } from "@/lib/status/resolve";
+import type { StatusBlock, StatusView } from "@/lib/status/resolve";
 import { cn } from "@/lib/utils";
+import { setBlockCursor } from "@/server/actions/events";
 
 import { ProgressBar } from "./status-hud";
 
@@ -119,6 +121,74 @@ export function PauseMenu({
 }
 
 /**
+ * The cursor the menu is drawing, which is not always the one the server sent.
+ *
+ * Moving the cursor is a keypress, and waiting for a round-trip before the
+ * highlight moves would make the list feel stuck — the same reason every grid
+ * mutation draws before it saves. The local pin is therefore authoritative for
+ * rendering until the server view agrees with it, at which point it is dropped
+ * so the server is back in charge.
+ *
+ * The pending id is compared against `view`, not cleared on a timer: the status
+ * query refetches on its own minute tick, so "the server now says what I said"
+ * is a signal that actually arrives.
+ */
+function useCursor(block: StatusBlock | null, current: ChecklistItem | null) {
+  const [pending, setPending] = useState<string | null>(null);
+
+  // The server has caught up (or something else moved the cursor) — stop
+  // overriding it. Comparing during render rather than in an effect keeps this
+  // pure, which `react-hooks/set-state-in-effect` requires.
+  if (pending !== null && current?.id === pending) setPending(null);
+
+  const shown = pending ? (block?.items.find((item) => item.id === pending) ?? current) : current;
+
+  function move(direction: 1 | -1) {
+    if (!block || !shown) return;
+
+    const target =
+      direction === 1 ? itemAfter(block.items, shown.id) : itemBefore(block.items, shown.id);
+    if (!target) return;
+
+    setPending(target.id);
+    // Not awaited, and failure is silent by design: the worst case is the
+    // highlight snapping back to where the server still thinks it is, which is
+    // self-explanatory on screen in a way a toast about a reading position
+    // would not be.
+    void setBlockCursor({ id: block.id, cursorItemId: target.id }).catch(() => setPending(null));
+  }
+
+  function clear() {
+    if (!block) return;
+    setPending(null);
+    void setBlockCursor({ id: block.id, cursorItemId: null }).catch(() => {});
+  }
+
+  // Registered on the window rather than on the panel, because the panel loses
+  // focus the moment a tab button or the reset link is clicked and the arrows
+  // would go dead. The menu is modal, so there is nothing underneath that wants
+  // these keys — except a text field, which is why typing is still guarded.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? "")) {
+        return;
+      }
+
+      event.preventDefault();
+      move(event.key === "ArrowDown" ? 1 : -1);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
+  return { shown, clear };
+}
+
+/**
  * Three zones, separated by luminance rather than by size.
  *
  * Bright for now, normal for next, faint for later — so the eye lands on the
@@ -126,6 +196,11 @@ export function PauseMenu({
  * expanding it would turn a two-second read into a fourth thing to parse.
  */
 function NowTab({ view }: { view: StatusView }) {
+  // Called before any branch: a hook may not sit behind a conditional return,
+  // and the `clear`/`gap` states have no block to carry a cursor anyway.
+  const hasBlock = view.kind === "running" || view.kind === "overrunning";
+  const { shown, clear } = useCursor(hasBlock ? view.block : null, hasBlock ? view.current : null);
+
   if (view.kind === "clear") {
     return (
       <Section>
@@ -168,6 +243,7 @@ function NowTab({ view }: { view: StatusView }) {
   }
 
   const overrunning = view.kind === "overrunning";
+  const nextAfterShown = shown ? itemAfter(view.block.items, shown.id) : null;
 
   return (
     <>
@@ -196,7 +272,7 @@ function NowTab({ view }: { view: StatusView }) {
           </span>
         </div>
 
-        {view.current ? (
+        {shown ? (
           <div className="mt-4">
             <div className="flex items-center gap-2">
               <span
@@ -205,13 +281,34 @@ function NowTab({ view }: { view: StatusView }) {
               >
                 ▸
               </span>
-              <span className="text-ink truncate font-medium">{view.current.text}</span>
+              <span
+                className={cn(
+                  "truncate font-medium",
+                  // A ticked item can only be current because it was pinned
+                  // there, so it reads as struck through rather than as the
+                  // next thing to do.
+                  shown.checked ? "text-ink-muted line-through" : "text-ink",
+                )}
+              >
+                {shown.text}
+              </span>
             </div>
-            {view.block.totalCount > 0 ? (
-              <p className="text-ink-muted mt-1 pl-5 text-xs tabular-nums">
-                {view.block.doneCount} of {view.block.totalCount} complete
-              </p>
-            ) : null}
+            <div className="mt-1 flex items-baseline gap-2 pl-5">
+              {view.block.totalCount > 0 ? (
+                <p className="text-ink-muted text-xs tabular-nums">
+                  {view.block.doneCount} of {view.block.totalCount} complete
+                </p>
+              ) : null}
+              {view.block.cursorPinned ? (
+                <button
+                  type="button"
+                  onClick={clear}
+                  className="text-ink-faint hover:text-ink text-xs underline underline-offset-4 transition-colors"
+                >
+                  Pinned · reset
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : view.block.totalCount > 0 ? (
           <p className="text-ink-muted mt-4 text-sm">All {view.block.totalCount} items complete.</p>
@@ -221,12 +318,22 @@ function NowTab({ view }: { view: StatusView }) {
       </Section>
 
       <Section bordered>
-        <Label>Next</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label>Next</Label>
+          {/* Named rather than left to be discovered: the pause-menu research
+              flags the unlabelled affordance as the recurring failure. */}
+          {view.block.totalCount > 1 ? (
+            <span className="text-ink-faint text-xs">↑↓ to move</span>
+          ) : null}
+        </div>
         <div className="mt-2 space-y-2">
+          {/* Derived from the cursor being drawn rather than from `view.nextItem`,
+              which still trails the server by a round-trip after an arrow press
+              and would briefly disagree with the highlight above. */}
           <NextRow
-            text={view.nextItem?.text ?? null}
+            text={nextAfterShown?.text ?? null}
             empty="Nothing else in this block"
-            item={view.nextItem}
+            item={nextAfterShown}
           />
           {view.nextBlock ? (
             <div className="border-line-soft flex items-baseline justify-between gap-3 border-t pt-2">

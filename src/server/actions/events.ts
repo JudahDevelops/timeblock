@@ -112,3 +112,30 @@ export async function deleteEvent(id: string) {
   push(userId, id);
   revalidatePath("/calendar", "page");
 }
+
+/**
+ * Pins the status window's cursor to a checklist item, or clears the override.
+ *
+ * Three things this deliberately does not do. It does not push to Google: the
+ * cursor is a local reading position with no representation in a calendar event,
+ * and sending one would be a write with nothing on the other side to receive it.
+ * It does not touch `updatedAt`, because `pushPending` reads
+ * `lastPushedAt < updatedAt` as "this row has unsent changes" and `reconcile`
+ * uses the same timestamp to decide who wins a conflict — moving a cursor would
+ * otherwise queue a spurious push and could hand a contested edit to the wrong
+ * side. And it does not validate that the id exists in the body: checklist items
+ * live in jsonb, the body may be mid-edit in another tab, and `resolveCursor`
+ * already falls back when a pin goes stale. Storing an id that resolves to
+ * nothing is harmless; refusing to store one the user just clicked is not.
+ */
+export async function setBlockCursor(input: { id: string; cursorItemId: string | null }) {
+  const userId = await requireUserId();
+
+  const updated = await db
+    .update(events)
+    .set({ cursorItemId: input.cursorItemId })
+    .where(and(eq(events.id, input.id), eq(events.userId, userId), isNull(events.deletedAt)))
+    .returning({ id: events.id });
+
+  if (updated.length === 0) throw new Error("Event not found");
+}

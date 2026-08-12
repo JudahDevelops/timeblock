@@ -71,6 +71,19 @@ export const events = pgTable(
     /** Optimistic concurrency guard for autosave. */
     bodyRev: integer("body_rev").notNull().default(0),
 
+    /**
+     * Pins the status window's cursor to one checklist item, overriding the
+     * default of "first unchecked".
+     *
+     * Holds a BlockNote block id, which is why there is no foreign key to point
+     * it at: checklist items live inside `body`'s jsonb, not in a table. The id
+     * is stable across edits, but it can still go stale — the item can be
+     * deleted, or the whole checklist replaced — so every read falls back rather
+     * than trusting it. Null means "follow the default", which is also what a
+     * cleared override writes back.
+     */
+    cursorItemId: text("cursor_item_id"),
+
     /** 30-day tombstone so a 410 full-resync cannot resurrect a deletion. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
 
