@@ -1,12 +1,38 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { type EmojiClickData, Theme } from "emoji-picker-react";
 
-import { useMediaQuery } from "@/lib/use-media-query";
+import { readTheme, subscribeTheme } from "@/lib/theme";
 
 const Picker = dynamic(() => import("emoji-picker-react"), { ssr: false });
+
+/**
+ * Whether the app is currently dark, which is not the same question as whether
+ * the OS is.
+ *
+ * Dark mode here is a class on `<html>` that the user can set independently of
+ * their system preference, so asking `prefers-color-scheme` directly renders a
+ * light picker inside a dark app whenever the two disagree. Read through the
+ * same store the theme toggle writes, then resolve "system" against the media
+ * query only as the fallback it actually is.
+ */
+function subscribeDark(onChange: () => void) {
+  const unsubscribe = subscribeTheme(onChange);
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", onChange);
+  return () => {
+    unsubscribe();
+    media.removeEventListener("change", onChange);
+  };
+}
+
+function isDark() {
+  const theme = readTheme();
+  if (theme !== "system") return theme === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
 
 export function EmojiPicker({
   onSelect,
@@ -16,7 +42,9 @@ export function EmojiPicker({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const dark = useMediaQuery("(prefers-color-scheme: dark)", false);
+  // `false` on the server: the picker is `ssr: false` anyway, so this only
+  // decides the very first client frame.
+  const dark = useSyncExternalStore(subscribeDark, isDark, () => false);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

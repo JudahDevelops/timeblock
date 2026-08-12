@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { EmojiPicker } from "@/components/shell/emoji-picker";
 import { useToast } from "@/components/shell/toast";
 import {
   DEFAULT_FIELD_H,
@@ -58,6 +59,20 @@ export function DashboardView({ dashboard, now }: { dashboard: DashboardDetail; 
   const toast = useToast();
   const invalidate = useInvalidateDashboards();
   const [name, setName] = useState(dashboard.name);
+  /**
+   * The icon drawn while a write is in flight.
+   *
+   * Held as an override rather than mirrored from props, so there is no effect
+   * copying the server value into state — the shape the compiler lint rejects.
+   * `undefined` means "no pending change, show what the server sent"; `null` is
+   * a real value meaning the user removed the icon.
+   */
+  const [pendingEmoji, setPendingEmoji] = useState<string | null | undefined>(undefined);
+  const [pickingEmoji, setPickingEmoji] = useState(false);
+
+  // The server has caught up — stop overriding it.
+  if (pendingEmoji !== undefined && pendingEmoji === dashboard.emoji) setPendingEmoji(undefined);
+  const emoji = pendingEmoji === undefined ? dashboard.emoji : pendingEmoji;
 
   /**
    * The layout while a pointer is down, drawn before it is saved.
@@ -243,6 +258,36 @@ export function DashboardView({ dashboard, now }: { dashboard: DashboardDetail; 
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+      {/* Smaller than the 78px icon on a page: a dashboard opens straight into a
+          grid of fields, so the header has to stay out of the way of the thing
+          the page is actually for. */}
+      <div className="relative mb-2 w-fit">
+        <button
+          type="button"
+          onClick={() => setPickingEmoji((open) => !open)}
+          aria-label="Change dashboard icon"
+          className="hover:bg-surface-raised rounded-lg p-1 text-4xl leading-none transition-colors"
+        >
+          {emoji ?? "📊"}
+        </button>
+        {pickingEmoji ? (
+          <EmojiPicker
+            onSelect={(selected) => {
+              setPendingEmoji(selected);
+              setPickingEmoji(false);
+              void updateDashboard({ id: dashboard.id, emoji: selected })
+                .then(invalidate)
+                .catch(() => {
+                  setPendingEmoji(undefined);
+                  router.refresh();
+                  toast("Could not change the icon.");
+                });
+            }}
+            onClose={() => setPickingEmoji(false)}
+          />
+        ) : null}
+      </div>
+
       <input
         ref={nameInput}
         value={name}

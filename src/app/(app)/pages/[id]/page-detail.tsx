@@ -11,7 +11,7 @@ import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/p
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
 
-import { EmojiPicker } from "./emoji-picker";
+import { EmojiPicker } from "@/components/shell/emoji-picker";
 
 const BlockEditor = dynamic(() => import("@/components/editor/block-editor"), {
   ssr: false,
