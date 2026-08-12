@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -90,18 +90,46 @@ function Palette({ view, onClose }: { view: CalendarView; onClose: () => void })
   // A shrinking result set can strand the cursor past the end of the list.
   const index = Math.min(active, Math.max(results.length - 1, 0));
 
-  function go(hit: SearchResult) {
-    onClose();
+  function hrefFor(hit: SearchResult) {
     // The search term rides along so the destination can point at what was
     // matched. Without it the reader arrives at the top of a long document and
     // has to find by eye the thing the search had already located.
     const q = `q=${encodeURIComponent(debounced.trim())}`;
-    if (hit.kind === "page") {
-      router.push(`/pages/${hit.id}?${q}`);
-    } else {
-      router.push(`${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}&${q}`);
-    }
+    return hit.kind === "page"
+      ? `/pages/${hit.id}?${q}`
+      : `${calendarPath(view, new Date(hit.startsAt))}?open=${hit.id}&${q}`;
   }
+
+  function go(hit: SearchResult) {
+    onClose();
+    router.push(hrefFor(hit));
+  }
+
+  /**
+   * Starts fetching a result before it is chosen.
+   *
+   * Arrowing through a list takes far longer than a round trip, so by the time
+   * Enter is pressed the page is usually already there. Each href is asked for
+   * once — `router.prefetch` is cheap but not free, and a held arrow key would
+   * otherwise fire it on every repeat.
+   */
+  const prefetched = useRef(new Set<string>());
+  function warm(hit: SearchResult) {
+    const href = hrefFor(hit);
+    if (prefetched.current.has(href)) return;
+    prefetched.current.add(href);
+    router.prefetch(href);
+  }
+
+  // Warms whatever is highlighted, however it got highlighted — arrow keys and
+  // hover both land here, so neither path needs its own prefetch call.
+  const highlighted = results[index];
+  useEffect(() => {
+    if (highlighted) warm(highlighted);
+    // `warm` is redefined every render but closes over nothing that changes the
+    // href for a given hit, so the highlighted result is the only real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlighted]);
 
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Escape") onClose();

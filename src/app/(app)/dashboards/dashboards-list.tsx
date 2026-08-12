@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
@@ -75,9 +76,9 @@ export function DashboardsList({ dashboards }: { dashboards: DashboardSummary[] 
           <ul className="divide-line divide-y">
             {dashboards.map((dashboard) => (
               <li key={dashboard.id}>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/dashboards/${dashboard.id}`)}
+                {/* A link, not a button — see `pages-list.tsx`. */}
+                <Link
+                  href={`/dashboards/${dashboard.id}`}
                   className="hover:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left transition-colors sm:px-6"
                 >
                   <span className="text-xl" aria-hidden>
@@ -86,7 +87,7 @@ export function DashboardsList({ dashboards }: { dashboards: DashboardSummary[] 
                   <span className="text-ink min-w-0 flex-1 truncate text-sm font-medium">
                     {dashboard.name || "Untitled dashboard"}
                   </span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -66,9 +67,12 @@ export function PagesList({ pages }: { pages: PageSummary[] }) {
           <ul className="divide-line divide-y">
             {pages.map((page) => (
               <li key={page.id}>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/pages/${page.id}`)}
+                {/* A link, not a button: `next/link` prefetches the route on
+                    hover, which is most of what makes opening a page feel
+                    instant — a button cannot, and also loses middle-click and
+                    open-in-new-tab. */}
+                <Link
+                  href={`/pages/${page.id}`}
                   className="hover:bg-surface-sunken flex w-full items-center gap-3 px-4 py-3 text-left transition-colors sm:px-6"
                 >
                   <span className="text-xl" aria-hidden>
@@ -82,7 +86,7 @@ export function PagesList({ pages }: { pages: PageSummary[] }) {
                   <span className="text-ink-faint shrink-0 text-xs">
                     {formatDistanceToNow(page.updatedAt, { addSuffix: true })}
                   </span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

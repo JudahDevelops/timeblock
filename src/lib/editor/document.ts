@@ -29,3 +29,27 @@ export function isBlockDocument(value: unknown): value is BlockDocument {
     )
   );
 }
+
+/** Enough of a document to decide which of two copies is newer. */
+export type Revisioned = { bodyRev: number };
+
+/**
+ * Which of two copies of one document to open.
+ *
+ * Keeping a document cached across a tab switch is what makes reopening it
+ * free, but a cache that always wins is a cache that can serve back a version
+ * the user has already moved past — edited in another tab, or arrived by sync.
+ * `bodyRev` is the only thing that actually orders the two, so it decides.
+ *
+ * Incoming wins a tie. A tie means the same revision, so the two are the same
+ * document, and preferring the fresher object avoids pinning a stale one in the
+ * cache forever.
+ *
+ * Pure and separated from the component because it is the rule that protects
+ * the user's text: get it backwards and an edit disappears behind an older
+ * copy. Kept honest by `document.test.ts`.
+ */
+export function pickDocument<T extends Revisioned>(cached: T | undefined, incoming: T): T {
+  if (!cached) return incoming;
+  return cached.bodyRev > incoming.bodyRev ? cached : incoming;
+}

@@ -1,13 +1,25 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { DashboardSkeleton } from "@/components/shell/dashboard-skeleton";
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { requireUserId } from "@/server/auth";
 import { getDashboardById } from "@/server/queries/dashboards";
 
+/** See `pages/[id]/page.tsx` — the await lives in the child so this can paint. */
 export default async function DashboardDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const userId = await requireUserId();
   const { id } = await params;
+
+  return (
+    <Suspense key={id} fallback={<DashboardSkeleton dashboardId={id} />}>
+      <DashboardContent id={id} />
+    </Suspense>
+  );
+}
+
+async function DashboardContent({ id }: { id: string }) {
+  const userId = await requireUserId();
 
   const dashboard = await getDashboardById(userId, id);
   if (!dashboard) notFound();

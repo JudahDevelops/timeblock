@@ -30,24 +30,41 @@ export async function getDashboards(userId: string): Promise<DashboardSummary[]>
     .orderBy(asc(dashboards.position), asc(dashboards.createdAt));
 }
 
+/**
+ * One dashboard with its fields, in a single round trip's worth of waiting.
+ *
+ * The two reads are issued together rather than in sequence. The field query
+ * looks nothing up from the first result — it filters on `dashboardId` and
+ * `userId`, both known before either runs — so awaiting the dashboard row first
+ * bought nothing and cost a second ~270ms trip to Supabase on every open.
+ *
+ * Fields for a dashboard that turns out not to exist are simply discarded, and
+ * cost nothing: the query returns no rows.
+ */
 export async function getDashboardById(
   userId: string,
   id: string,
 ): Promise<DashboardDetail | null> {
-  const [dashboard] = await db
-    .select({
-      id: dashboards.id,
-      name: dashboards.name,
-      emoji: dashboards.emoji,
-      position: dashboards.position,
-    })
-    .from(dashboards)
-    .where(and(eq(dashboards.id, id), eq(dashboards.userId, userId), isNull(dashboards.deletedAt)))
-    .limit(1);
+  const [rows, fields] = await Promise.all([
+    db
+      .select({
+        id: dashboards.id,
+        name: dashboards.name,
+        emoji: dashboards.emoji,
+        position: dashboards.position,
+      })
+      .from(dashboards)
+      .where(
+        and(eq(dashboards.id, id), eq(dashboards.userId, userId), isNull(dashboards.deletedAt)),
+      )
+      .limit(1),
+    getFields(userId, id),
+  ]);
 
+  const [dashboard] = rows;
   if (!dashboard) return null;
 
-  return { ...dashboard, fields: await getFields(userId, id) };
+  return { ...dashboard, fields };
 }
 
 /**

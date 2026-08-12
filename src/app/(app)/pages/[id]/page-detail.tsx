@@ -2,24 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { PageDocument } from "@/app/api/pages/[id]/body/route";
+import { BlockEditor } from "@/components/editor/lazy-block-editor";
 import { useBodyAutosave, type SaveState } from "@/components/editor/use-body-autosave";
 import { useHighlightMatch } from "@/components/search/use-highlight-match";
 import { useRegisterTab } from "@/components/shell/use-register-tab";
+import { pickDocument } from "@/lib/editor/document";
 import { closeTab } from "@/lib/tabs";
 import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/pages";
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
 
 import { EmojiPicker } from "@/components/shell/emoji-picker";
-
-const BlockEditor = dynamic(() => import("@/components/editor/block-editor"), {
-  ssr: false,
-  loading: () => <div className="text-ink-faint px-14 py-8 text-sm">Loading editor…</div>,
-});
 
 const STATUS_LABEL: Record<SaveState, string> = {
   idle: "",
@@ -74,6 +70,15 @@ export function PageDetail({
     router.push("/pages");
   };
 
+  // Reconciled before the query sees it, because `initialData` seeds an *empty*
+  // cache only: on a revisit the cached copy would otherwise win by default, no
+  // matter how old it is. Written during render but only ever into the query
+  // cache, which is external state — no ref or `setState` is touched here, so
+  // the React Compiler lint is satisfied.
+  const queryClient = useQueryClient();
+  const cached = queryClient.getQueryData<PageDocument>(["page-body", pageId]);
+  const opening = pickDocument(cached, initialDoc);
+
   const { data, isPending, isError } = useQuery({
     queryKey: ["page-body", pageId],
     queryFn: async (): Promise<PageDocument> => {
@@ -87,9 +92,14 @@ export function PageDetail({
     // `staleTime: Infinity` it is also never refetched behind the user's back —
     // which matters, because the editor is uncontrolled and a late refetch
     // would be a second document arriving after they had started typing.
-    initialData: initialDoc,
+    initialData: opening,
     staleTime: Infinity,
-    gcTime: 0,
+    // Deliberately not 0. The tab strip means the same few documents are
+    // reopened constantly, and evicting the body on unmount made every one of
+    // those revisits pay for a round trip to fetch a document we had in memory
+    // a moment ago. Held for ten minutes instead — long enough to cover a work
+    // session's tab switching, short enough not to hoard.
+    gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,
     retry: 1,
   });
@@ -184,7 +194,12 @@ function PageBody({
       ) : null}
 
       <div className="page-editor mt-1 min-h-[60vh]">
-        <BlockEditor initialContent={doc.body} onChange={scheduleSave} />
+        {/* Keyed by document. The editor is uncontrolled — it reads
+            `initialContent` once at mount and owns its state from then on — so
+            without this, routing from one page to another could hand a second
+            document to an editor already holding the first, and the change
+            would simply be ignored. */}
+        <BlockEditor key={doc.id} initialContent={doc.body} onChange={scheduleSave} />
       </div>
 
       <div className="border-line mt-12 flex items-center border-t pt-4">

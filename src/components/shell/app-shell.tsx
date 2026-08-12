@@ -16,6 +16,7 @@ import {
 import { signOut } from "@/server/actions/auth";
 import { createDashboard, deleteDashboard } from "@/server/actions/dashboards";
 import { createPage, deletePage } from "@/server/actions/pages";
+import { preloadEditor } from "@/components/editor/lazy-block-editor";
 import { StatusWindow } from "@/components/status/status-window";
 import { useToast } from "@/components/shell/toast";
 import { readSidebarCollapsed, setSidebarCollapsed, subscribeSidebar } from "@/lib/sidebar";
@@ -104,6 +105,21 @@ export function AppShell({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
+
+  // Fetch the editor chunk once the app has settled. It is large and loaded
+  // lazily, so without this the first document of a session waits for it *after*
+  // everything else has finished — the one open that feels slow no matter how
+  // fast the query was. Deferred to idle so it never competes with the first
+  // paint, and behind a timeout for Safari, which has no `requestIdleCallback`.
+  useEffect(() => {
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const handle = idle(() => preloadEditor(), { timeout: 3000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = window.setTimeout(preloadEditor, 1500);
+    return () => window.clearTimeout(handle);
+  }, []);
 
   return (
     <OpenSidebar.Provider value={openMenu}>

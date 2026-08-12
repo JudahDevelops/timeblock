@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -12,12 +11,8 @@ import { dayAtMinutes, MIN_EVENT_MINUTES, minutesSinceMidnight } from "@/lib/cal
 import { useKeyboardInset } from "@/lib/use-keyboard-inset";
 import { cn } from "@/lib/utils";
 
+import { BlockEditor } from "./lazy-block-editor";
 import { useBodyAutosave, type SaveState } from "./use-body-autosave";
-
-const BlockEditor = dynamic(() => import("./block-editor"), {
-  ssr: false,
-  loading: () => <div className="text-ink-faint px-14 py-8 text-sm">Loading editor…</div>,
-});
 
 function parseTimeInput(value: string): number | null {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
