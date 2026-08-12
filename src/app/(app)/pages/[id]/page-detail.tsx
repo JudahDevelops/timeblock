@@ -8,6 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { PageDocument } from "@/app/api/pages/[id]/body/route";
 import { useBodyAutosave, type SaveState } from "@/components/editor/use-body-autosave";
 import { useHighlightMatch } from "@/components/search/use-highlight-match";
+import { useRegisterTab } from "@/components/shell/use-register-tab";
+import { closeTab } from "@/lib/tabs";
 import { deletePage, updatePageEmoji, updatePageTitle } from "@/server/actions/pages";
 import { SidebarTrigger } from "@/components/shell/app-shell";
 import { cn } from "@/lib/utils";
@@ -45,9 +47,15 @@ export function PageDetail({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   /** Set when arriving from the palette, so the match can be pointed at. */
   const query = useSearchParams().get("q");
+  const [title, setTitle] = useState(initialTitle);
+
+  // The bare path, never the `?q=` one: a tab is a document, and two visits to
+  // the same page from two different searches are the same tab.
+  useRegisterTab({ href: `/pages/${pageId}`, title, emoji });
 
   const handleRename = (value: string) => {
     if (value !== initialTitle) {
+      setTitle(value);
       void updatePageTitle({ id: pageId, title: value });
     }
   };
@@ -60,6 +68,9 @@ export function PageDetail({
 
   const handleDelete = () => {
     void deletePage(pageId);
+    // Or the strip keeps a tab pointing at a page that no longer exists, which
+    // reopens as a 404 the next time it is clicked.
+    closeTab(`/pages/${pageId}`);
     router.push("/pages");
   };
 

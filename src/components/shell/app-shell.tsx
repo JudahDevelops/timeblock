@@ -19,8 +19,10 @@ import { createPage, deletePage } from "@/server/actions/pages";
 import { StatusWindow } from "@/components/status/status-window";
 import { useToast } from "@/components/shell/toast";
 import { readSidebarCollapsed, setSidebarCollapsed, subscribeSidebar } from "@/lib/sidebar";
+import { closeTab } from "@/lib/tabs";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
+import { TabBar } from "./tab-bar";
 import { ThemeToggle } from "./theme-toggle";
 
 const OpenSidebar = createContext<() => void>(() => {});
@@ -155,6 +157,9 @@ export function AppShell({
         ) : null}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Above the content and outside it, so switching tabs never unmounts
+              the strip that did the switching. */}
+          <TabBar />
           {children}
           <StatusWindow />
         </div>
@@ -317,7 +322,12 @@ function DashboardsSection({
     setDeleted((current) => [...current, id]);
 
     void deleteDashboard(id)
-      .then(() => router.refresh())
+      .then(() => {
+        // Closed on success only: this delete rolls back if the write fails, and
+        // a tab discarded early could not be brought back with the row.
+        closeTab(`/dashboards/${id}`);
+        router.refresh();
+      })
       .catch(() => {
         // Restored only on failure. On success the id stays in `deleted` until
         // the refreshed props arrive without it — clearing it here instead would
@@ -470,6 +480,8 @@ function PagesSection({ pages, onNavigate }: { pages: SidebarPage[]; onNavigate?
   const handleDelete = (pageId: string) => {
     setContextMenu(null);
     void deletePage(pageId);
+    // The tab outlives the page otherwise, and reopens as a 404.
+    closeTab(`/pages/${pageId}`);
     if (pathname === `/pages/${pageId}`) {
       router.push("/pages");
       onNavigate?.();

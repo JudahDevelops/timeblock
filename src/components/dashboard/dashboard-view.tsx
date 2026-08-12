@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { EmojiPicker } from "@/components/shell/emoji-picker";
 import { useToast } from "@/components/shell/toast";
+import { useRegisterTab } from "@/components/shell/use-register-tab";
 import {
   DEFAULT_FIELD_H,
   DEFAULT_FIELD_W,
@@ -55,6 +56,10 @@ export function DashboardView({ dashboard, now }: { dashboard: DashboardDetail; 
   // The server has caught up — stop overriding it.
   if (pendingEmoji !== undefined && pendingEmoji === dashboard.emoji) setPendingEmoji(undefined);
   const emoji = pendingEmoji === undefined ? dashboard.emoji : pendingEmoji;
+
+  // Named from the local state, so renaming a dashboard retitles its tab as you
+  // type rather than on the next load.
+  useRegisterTab({ href: `/dashboards/${dashboard.id}`, title: name, emoji });
 
   /** Fields drawn before the insert has come back. See `handleAdd`. */
   const [adding, setAdding] = useState<PendingField[]>([]);
