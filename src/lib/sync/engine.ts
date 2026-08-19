@@ -41,6 +41,8 @@ export type SyncOutcome = {
   echoed: number;
   /** Remote changes a newer local edit outranked. Queued to push again. */
   kept: number;
+  /** Live in Google, tombstoned here. Left deleted rather than re-imported. */
+  withdrawn: number;
   /** Resolutions where both sides had moved. One row each in `sync_conflicts`. */
   conflicts: number;
   /** Cancellations that were a calendar move, not a deletion. */
@@ -57,6 +59,7 @@ const NOTHING: PageOutcome = {
   cancelled: 0,
   echoed: 0,
   kept: 0,
+  withdrawn: 0,
   conflicts: 0,
   moved: 0,
 };
@@ -389,6 +392,14 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
     if (verdict === "keep") {
       relink.push(m);
       outcome.kept++;
+      continue;
+    }
+    // Deleted here and still live in Google. Deliberately not relinked either:
+    // the row is left exactly as it stands so `pushPending` keeps seeing an
+    // unsent withdrawal and retries it, which is what eventually removes the
+    // event over there.
+    if (verdict === "withdraw") {
+      outcome.withdrawn++;
       continue;
     }
 

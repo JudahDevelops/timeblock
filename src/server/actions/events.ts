@@ -102,10 +102,17 @@ export async function updateEventTitle(input: { id: string; title: string }) {
 export async function deleteEvent(id: string) {
   const userId = await requireUserId();
 
-  await db
+  // Guarded on the tombstone, unlike the other writes here, because re-stamping
+  // `deleted_at` on an already-deleted row keeps pushing its own clock forward
+  // and it never ages into `purgeTombstones`. A second delete is a no-op rather
+  // than an error: the block is already gone, which is what the user wanted.
+  const deleted = await db
     .update(events)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(events.id, id), eq(events.userId, userId)));
+    .where(and(eq(events.id, id), eq(events.userId, userId), isNull(events.deletedAt)))
+    .returning({ id: events.id });
+
+  if (deleted.length === 0) return;
 
   // The tombstone is what the push reads to know this is a withdrawal, so it
   // has to be written first.

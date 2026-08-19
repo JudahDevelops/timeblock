@@ -19,7 +19,9 @@ export type Verdict =
   /** Ours is newer. Leave the row alone and send it to Google again. */
   | "keep"
   /** This is our own write coming back. Do nothing at all. */
-  | "echo";
+  | "echo"
+  /** Deleted here. Leave the tombstone alone and do not draw it again. */
+  | "withdraw";
 
 export type LinkState = {
   gcalEtag: string | null;
@@ -33,6 +35,8 @@ export type LocalState = {
   startsAt: Date;
   endsAt: Date;
   updatedAt: Date;
+  /** Set once the user deleted it here. Outranks anything Google is showing. */
+  deletedAt: Date | null;
 };
 
 export type RemoteState = {
@@ -64,6 +68,14 @@ export function reconcile(
   if (link?.gcalEtag && remote.etag && link.gcalEtag === remote.etag) {
     return { verdict: "echo", conflicted: false };
   }
+
+  // A tombstone outranks whatever Google is still showing. Either the
+  // withdrawal has not reached Google yet or it was refused; either way the user
+  // deleted this block, and re-importing it is precisely how a deleted block
+  // came back every five minutes forever. Checked below the etag so our own
+  // delete coming back still reads as an echo, and above the `origin` line
+  // because imported events are the ones that resurrected most reliably.
+  if (local.deletedAt) return { verdict: "withdraw", conflicted: false };
 
   const conflicted = changedSinceAgreement(link, local);
 

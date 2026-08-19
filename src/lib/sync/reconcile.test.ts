@@ -16,6 +16,7 @@ const local = (overrides: Partial<LocalState> = {}): LocalState => ({
   startsAt: at("2026-08-05T09:00:00.000Z"),
   endsAt: at("2026-08-05T11:00:00.000Z"),
   updatedAt: at("2026-08-05T08:00:00.000Z"),
+  deletedAt: null,
   ...overrides,
 });
 
@@ -119,6 +120,56 @@ describe("reconcile", () => {
 
   it("cannot call it a conflict with no link to date it against", () => {
     expect(reconcile(null, local(), remote()).conflicted).toBe(false);
+  });
+
+  it("leaves a block deleted here deleted, however live Google says it is", () => {
+    // The resurrection loop: Google keeps returning it, and without this every
+    // sync cleared the tombstone and drew the block again.
+    const resolution = reconcile(
+      link({ gcalEtag: '"old"' }),
+      local({ deletedAt: at("2026-08-05T12:00:00.000Z") }),
+      remote({ updated: at("2026-08-05T13:00:00.000Z") }),
+    );
+    expect(resolution).toEqual({ verdict: "withdraw", conflicted: false });
+  });
+
+  it("withdraws an imported block too, rather than yielding to Google", () => {
+    // The worst case before the fix. `origin: "google"` returned `apply`
+    // unconditionally, so an imported block could never be deleted at all.
+    const resolution = reconcile(
+      link({ gcalEtag: '"old"' }),
+      local({ origin: "google", deletedAt: at("2026-08-05T12:00:00.000Z") }),
+      remote({ updated: at("2026-08-05T23:00:00.000Z") }),
+    );
+    expect(resolution.verdict).toBe("withdraw");
+  });
+
+  it("still calls a matching etag an echo, even on a deleted row", () => {
+    // Our own delete coming back is not a fresh decision to make.
+    expect(
+      reconcile(link(), local({ deletedAt: at("2026-08-05T12:00:00.000Z") }), remote()),
+    ).toEqual({ verdict: "echo", conflicted: false });
+  });
+
+  it("withdraws regardless of which side changed last", () => {
+    // Deletion is not a last-write-wins field. A remote edit after the tombstone
+    // is still an edit to something the user removed.
+    const staleTombstone = reconcile(
+      link({ gcalEtag: '"old"' }),
+      local({
+        updatedAt: at("2026-08-05T08:00:00.000Z"),
+        deletedAt: at("2026-08-05T08:00:00.000Z"),
+      }),
+      remote({ updated: at("2026-08-05T23:00:00.000Z") }),
+    );
+    expect(staleTombstone.verdict).toBe("withdraw");
+  });
+
+  it("does not withdraw a live row", () => {
+    // The guard keys on the tombstone alone, so every pre-existing verdict has
+    // to survive it untouched.
+    expect(reconcile(link({ gcalEtag: '"old"' }), local(), remote()).verdict).not.toBe("withdraw");
+    expect(reconcile(null, null, remote()).verdict).toBe("import");
   });
 });
 

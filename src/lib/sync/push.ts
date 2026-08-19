@@ -25,7 +25,19 @@ export type PushResult = "created" | "updated" | "deleted" | "skipped";
  */
 export async function pushEvent(userId: string, eventId: string): Promise<PushResult> {
   const [event] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
-  if (!event || event.userId !== userId || !isPushable(event)) return "skipped";
+  if (!event || event.userId !== userId) return "skipped";
+
+  // A withdrawal is not an edit. `isPushable` exists to stop us rewriting the
+  // schedule of an event Google owns, but deleting is the one thing the user is
+  // always entitled to do — and gating it here is what left every deleted
+  // Google-origin block alive in Google and resurrecting locally on each sync.
+  //
+  // Recurring instances stay excluded, and the asymmetry is deliberate:
+  // cancelling one instance means writing an exception back to the series, the
+  // recurring write this codebase still defers. They are kept deleted locally by
+  // the `withdraw` verdict in `reconcile` instead.
+  const withdrawing = event.deletedAt !== null && event.recurringEventId === null;
+  if (!withdrawing && !isPushable(event)) return "skipped";
 
   const target = await writableConnection(userId);
   if (!target) return "skipped";
@@ -45,7 +57,7 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
 
   const now = new Date();
 
-  if (event.deletedAt) {
+  if (withdrawing) {
     // Nothing was ever pushed, so there is nothing to withdraw.
     if (!link || link.deletedAt) return "skipped";
 
