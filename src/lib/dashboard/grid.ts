@@ -185,16 +185,46 @@ export function pointToCell(
  * every group on every phone — they are three rows by default — drew on top of
  * whatever followed it, and the card's `overflow-hidden` cut off the rest.
  */
-export function toSingleColumn(items: GridItem[]): GridItem[] {
+export function toSingleColumn(
+  items: GridItem[],
+  /**
+   * The height an item needs here, where it may differ from the one stored.
+   *
+   * A group is the case that matters: its stored height is whatever it was
+   * dragged to on a desktop, next to other fields, and on a phone it is the
+   * full width of the screen with nothing beside it. Asking the caller lets
+   * this stay pure — it is the component that knows what a group contains.
+   */
+  heightOf?: (item: GridItem) => number,
+): GridItem[] {
   let y = 0;
 
   return [...items]
     .sort((a, b) => a.y - b.y || a.x - b.x)
     .map((item) => {
-      const placed = { ...item, x: 0, y, w: GRID_COLUMNS, h: item.h };
-      y += item.h;
+      const h = Math.max(MIN_H, Math.round(heightOf?.(item) ?? item.h));
+      const placed = { ...item, x: 0, y, w: GRID_COLUMNS, h };
+      y += h;
       return placed;
     });
+}
+
+/**
+ * How many rows a group needs on a phone to show everything inside it.
+ *
+ * Vertical space is the cheap axis on a narrow screen — the page scrolls — so a
+ * group is given the room its children actually occupy rather than the height it
+ * happened to be resized to beside other fields. Without this a three-row group
+ * holding four one-row children simply cut the fourth off: the card is
+ * `overflow-hidden`, and `html, body` do not scroll.
+ *
+ * `childRows` is measured in the nested grid's own rows, which are shorter than
+ * the dashboard's; `ratio` converts them. The extra row is the header and the
+ * "Add to group" button, which sit outside the nested grid but inside the card.
+ */
+export function groupRowsNeeded(childRows: number, ratio: number, stored: number): number {
+  if (childRows <= 0) return stored;
+  return Math.max(stored, Math.ceil(childRows * ratio) + 1);
 }
 
 /** How many rows the layout occupies, for sizing the container. */

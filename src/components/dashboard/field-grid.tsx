@@ -6,6 +6,7 @@ import type { DashboardField } from "@/lib/dashboard/field";
 import {
   GRID_COLUMNS,
   gridHeight,
+  groupRowsNeeded,
   MIN_H,
   MIN_W,
   normalise,
@@ -116,9 +117,35 @@ export function FieldGrid({
   })();
 
   const boxes = new Map(layout.map((item) => [item.id, item]));
-  const drawn = narrow ? toSingleColumn(layout) : layout;
-  const rows = gridHeight(drawn);
   const rowHeight = cellHeight + GAP;
+
+  /**
+   * On a phone a group is given the height its contents need.
+   *
+   * Its stored height was chosen on a desktop, beside other fields; here it has
+   * the whole width to itself and anything that does not fit is cut off rather
+   * than scrolled, because the card is `overflow-hidden` and the page does not
+   * scroll. The nested grid's rows are shorter than this one's, hence the ratio.
+   */
+  const naturalHeight = (item: GridItem) => {
+    const field = fields.find((entry) => entry.id === item.id);
+    if (field?.kind !== "group" || field.children.length === 0) return item.h;
+
+    const childRows = gridHeight(
+      field.children.map((child) => ({
+        id: child.id,
+        x: child.x,
+        y: child.y,
+        w: child.w,
+        h: child.h,
+      })),
+    );
+
+    return groupRowsNeeded(childRows, (NESTED_CELL_HEIGHT + GAP) / rowHeight, item.h);
+  };
+
+  const drawn = narrow ? toSingleColumn(layout, naturalHeight) : layout;
+  const rows = gridHeight(drawn);
 
   /**
    * Move or resize, driven by the pointer.

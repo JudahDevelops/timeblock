@@ -6,6 +6,7 @@ import {
   firstFreeSlot,
   GRID_COLUMNS,
   gridHeight,
+  groupRowsNeeded,
   MIN_H,
   MIN_W,
   normalise,
@@ -227,6 +228,15 @@ describe("toSingleColumn", () => {
     expect(stacked.map((i) => i.y)).toEqual([0, 3]);
   });
 
+  it("takes the height the caller asks for, and leaves room for it", () => {
+    // How a group gets the space its children need on a phone.
+    const stacked = toSingleColumn([item("group", 0, 0, 6, 2), item("after", 0, 1)], (i) =>
+      i.id === "group" ? 5 : i.h,
+    );
+    expect(stacked.map((i) => i.h)).toEqual([5, 1]);
+    expect(stacked.map((i) => i.y)).toEqual([0, 5]);
+  });
+
   it("never overlaps itself, whatever the heights", () => {
     const stacked = toSingleColumn([
       item("a", 0, 0, 3, 2),
@@ -295,6 +305,37 @@ describe("scaleToColumns", () => {
     expect(row.at(-1)!.x + row.at(-1)!.w).toBe(GRID_COLUMNS);
     for (const [i, one] of row.entries()) {
       for (const other of row.slice(i + 1)) expect(overlaps(one, other)).toBe(false);
+    }
+  });
+});
+
+describe("groupRowsNeeded", () => {
+  // A nested row is 64+8 against the dashboard's 96+8 — almost exactly two
+  // thirds, which is the ratio the component passes in.
+  const RATIO = 72 / 104;
+
+  it("leaves an empty group at the height it was given", () => {
+    expect(groupRowsNeeded(0, RATIO, 3)).toBe(3);
+  });
+
+  it("never shrinks a group below its stored height", () => {
+    // One child in a group the user deliberately made tall stays tall.
+    expect(groupRowsNeeded(1, RATIO, 6)).toBe(6);
+  });
+
+  it("grows a group that cannot show what is inside it", () => {
+    // The reported bug: four one-row children in a three-row group, where the
+    // fourth was simply cut off.
+    expect(groupRowsNeeded(4, RATIO, 3)).toBe(4);
+    expect(groupRowsNeeded(8, RATIO, 3)).toBe(7);
+  });
+
+  it("always leaves a row for the header and the add button", () => {
+    // Both sit inside the card but outside the nested grid, so a group sized to
+    // its children exactly would clip the control that fills it.
+    for (const children of [1, 2, 3, 5, 10]) {
+      const rows = groupRowsNeeded(children, RATIO, 1);
+      expect(rows).toBeGreaterThan(children * RATIO);
     }
   });
 });

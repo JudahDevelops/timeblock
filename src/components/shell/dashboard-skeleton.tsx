@@ -42,8 +42,14 @@ export function DashboardSkeleton({ dashboardId }: { dashboardId: string }) {
             <div className="bg-surface-raised h-8 w-64 animate-pulse rounded-md" />
           )}
 
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-hidden>
-            {Array.from({ length: 8 }, (_, i) => (
+          {/* One full-width column below 640px and a half-width pair above it,
+              because that is what replaces this: `FieldGrid` collapses to a
+              single ordered column on a phone, and a new field opens at a third
+              of the width on a desktop. The height is one grid row —
+              `CELL_HEIGHT` plus `GAP`, less the gap — so the fields land where
+              their placeholders were instead of stepping down a row. */}
+          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2" aria-hidden>
+            {Array.from({ length: 6 }, (_, i) => (
               <div
                 key={i}
                 className="border-line bg-surface-raised h-24 animate-pulse rounded-lg border"
