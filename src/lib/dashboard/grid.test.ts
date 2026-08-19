@@ -10,6 +10,9 @@ import {
   MIN_W,
   normalise,
   overlaps,
+  PREVIOUS_GRID_COLUMNS,
+  scaleToColumns,
+  type GridBox,
   pointToCell,
   resolveCollisions,
   toSingleColumn,
@@ -20,13 +23,13 @@ const item = (id: string, x: number, y: number, w = 3, h = 1): GridItem => ({ id
 
 describe("clampBox", () => {
   it("keeps a box inside the grid", () => {
-    expect(clampBox({ x: 20, y: 0, w: 3, h: 1 })).toEqual({
-      x: GRID_COLUMNS - 3,
+    expect(clampBox({ x: 99, y: 0, w: 6, h: 1 })).toEqual({
+      x: GRID_COLUMNS - 6,
       y: 0,
-      w: 3,
+      w: 6,
       h: 1,
     });
-    expect(clampBox({ x: -5, y: -5, w: 3, h: 1 })).toEqual({ x: 0, y: 0, w: 3, h: 1 });
+    expect(clampBox({ x: -5, y: -5, w: 6, h: 1 })).toEqual({ x: 0, y: 0, w: 6, h: 1 });
   });
 
   it("holds a box to the minimum usable size", () => {
@@ -163,7 +166,9 @@ describe("normalise", () => {
   });
 
   it("leaves an already-tidy layout untouched", () => {
-    const tidy = [item("a", 0, 0), item("b", 3, 0), item("c", 6, 0)];
+    // Laid out edge to edge at the default width, so nothing needs clamping,
+    // pushing or lifting and the pipeline has to be a no-op.
+    const tidy = [item("a", 0, 0, 6), item("b", 6, 0, 6), item("c", 12, 0, 6)];
     expect(normalise(tidy)).toEqual(expect.arrayContaining(tidy));
   });
 
@@ -182,12 +187,12 @@ describe("normalise", () => {
 });
 
 describe("pointToCell", () => {
-  const WIDTH = 1200; // 100px per column
+  const WIDTH = 1200; // 50px per column
   const CELL = 80;
 
   it("maps a pixel offset to a column and row", () => {
     expect(pointToCell(0, 0, WIDTH, CELL)).toEqual({ x: 0, y: 0 });
-    expect(pointToCell(250, 90, WIDTH, CELL)).toEqual({ x: 2, y: 1 });
+    expect(pointToCell(250, 90, WIDTH, CELL)).toEqual({ x: 5, y: 1 });
   });
 
   it("never returns a column off the grid", () => {
@@ -214,6 +219,84 @@ describe("toSingleColumn", () => {
     const stacked = toSingleColumn([item("tall", 0, 0, 3, 3)]);
     expect(stacked[0].h).toBe(3);
   });
+
+  it("leaves room for a tall field instead of stacking on top of it", () => {
+    // A group is three rows by default, so counting positions rather than rows
+    // put the next field two rows inside it — the mobile clipping, exactly.
+    const stacked = toSingleColumn([item("group", 0, 0, 6, 3), item("after", 0, 1)]);
+    expect(stacked.map((i) => i.y)).toEqual([0, 3]);
+  });
+
+  it("never overlaps itself, whatever the heights", () => {
+    const stacked = toSingleColumn([
+      item("a", 0, 0, 3, 2),
+      item("b", 6, 0, 3, 3),
+      item("c", 0, 1, 3, 1),
+    ]);
+
+    for (const [i, one] of stacked.entries()) {
+      for (const other of stacked.slice(i + 1)) {
+        expect(overlaps(one, other)).toBe(false);
+      }
+    }
+  });
+});
+
+describe("scaleToColumns", () => {
+  const double = (box: GridBox) => scaleToColumns(box, PREVIOUS_GRID_COLUMNS, GRID_COLUMNS);
+
+  it("doubles a box from the old grid into the new one", () => {
+    expect(double({ x: 0, y: 0, w: 12, h: 1 })).toEqual({ x: 0, y: 0, w: 24, h: 1 });
+    expect(double({ x: 6, y: 2, w: 6, h: 3 })).toEqual({ x: 12, y: 2, w: 12, h: 3 });
+  });
+
+  it("leaves the vertical axis alone", () => {
+    // The migration touches `grid_x` and `grid_w` only. A row that moved would
+    // reshuffle every dashboard vertically for no reason.
+    const scaled = double({ x: 4, y: 7, w: 4, h: 5 });
+    expect(scaled.y).toBe(7);
+    expect(scaled.h).toBe(5);
+  });
+
+  it("survives an odd width without rounding it away", () => {
+    // A real row: BENCH PRESS sits at w=5, which only stays exact because the
+    // factor is a whole number.
+    expect(double({ x: 0, y: 0, w: 5, h: 1 })).toEqual({ x: 0, y: 0, w: 10, h: 1 });
+  });
+
+  it("keeps every real layout inside the new grid, untouched by clampBox", () => {
+    // The failure this migration has to be proved against. Every box below is a
+    // shape taken from a live dashboard; if doubling pushed any right edge past
+    // 24, `clampBox` would quietly shrink it and the next drag would persist the
+    // loss. Asserting `clampBox` is a no-op is the proof it does not.
+    const live: GridBox[] = [
+      { x: 0, y: 0, w: 12, h: 1 }, // full width, the commonest row
+      { x: 8, y: 0, w: 4, h: 1 }, // flush against the old right edge
+      { x: 6, y: 0, w: 6, h: 1 }, // right half
+      { x: 4, y: 0, w: 4, h: 1 }, // a middle third
+      { x: 0, y: 0, w: 5, h: 1 }, // the odd one
+      { x: 0, y: 0, w: 6, h: 3 }, // a group
+    ];
+
+    for (const box of live) {
+      const scaled = double(box);
+      expect(scaled.x + scaled.w).toBeLessThanOrEqual(GRID_COLUMNS);
+      expect(scaled.w).toBeGreaterThanOrEqual(MIN_W);
+      expect(clampBox(scaled)).toEqual(scaled);
+    }
+  });
+
+  it("carries a full row across as a full row", () => {
+    // Four quarters tiling the old grid must tile the new one exactly, with no
+    // gap opening up and no overlap appearing.
+    const row = Array.from({ length: 4 }, (_, i) => double({ x: i * 3, y: 0, w: 3, h: 1 }));
+
+    expect(row.map((b) => b.x)).toEqual([0, 6, 12, 18]);
+    expect(row.at(-1)!.x + row.at(-1)!.w).toBe(GRID_COLUMNS);
+    for (const [i, one] of row.entries()) {
+      for (const other of row.slice(i + 1)) expect(overlaps(one, other)).toBe(false);
+    }
+  });
 });
 
 describe("gridHeight", () => {
@@ -236,8 +319,8 @@ describe("firstFreeSlot", () => {
   });
 
   it("drops to the next row when the first is full", () => {
-    const full = Array.from({ length: 4 }, (_, i) => item(`f${i}`, i * 3, 0, 3, 1));
-    expect(firstFreeSlot(full, 3, 1)).toEqual({ x: 0, y: 1 });
+    const full = Array.from({ length: 4 }, (_, i) => item(`f${i}`, i * 6, 0, 6, 1));
+    expect(firstFreeSlot(full, 6, 1)).toEqual({ x: 0, y: 1 });
   });
 
   it("returns a slot that genuinely does not collide", () => {

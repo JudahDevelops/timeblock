@@ -11,15 +11,46 @@
  * file exhaustively testable. Same split as `calendar/geometry.ts`.
  */
 
-/** Twelve divides by 2, 3, 4 and 6, so halves, thirds and quarters all land clean. */
-export const GRID_COLUMNS = 12;
+/**
+ * Twenty-four divides by 2, 3, 4, 6 and 8, so halves, thirds, quarters and
+ * eighths all land clean.
+ *
+ * Doubled from twelve, which was too coarse to place a small reading precisely:
+ * the narrowest field a twelve-column grid can express is a sixth of the width,
+ * and a number with a two-word label does not need that much room. Doubling
+ * rather than picking some other number is what made the migration exact —
+ * every stored `grid_x` and `grid_w` scaled by two with nothing to round.
+ */
+export const GRID_COLUMNS = 24;
 
-/** Smallest usable field: a third of the width, one row tall. */
-export const MIN_W = 2;
+/** Smallest usable field: a sixth of the width, one row tall. */
+export const MIN_W = 4;
 export const MIN_H = 1;
+
+/** What the grid was before it was doubled. See `scaleToColumns`. */
+export const PREVIOUS_GRID_COLUMNS = 12;
 
 export type GridBox = { x: number; y: number; w: number; h: number };
 export type GridItem = GridBox & { id: string };
+
+/**
+ * A box expressed in one column count, re-expressed in another.
+ *
+ * This is the arithmetic `drizzle/0009_*.sql` performs against every stored row,
+ * written here so it can be tested rather than trusted. The migration is a
+ * one-way, non-idempotent write over real dashboards, and the failure it has to
+ * be proved against is silent: a doubled box whose right edge exceeded the grid
+ * would be shrunk by `clampBox`, and `updateFieldLayout` re-clamps server-side,
+ * so the first drag afterwards would persist the loss with nothing to undo it.
+ *
+ * Exact only when the counts are whole multiples — which is the reason 24 was
+ * chosen over any other number. Heights are untouched: this scales the
+ * horizontal axis alone, matching the migration.
+ */
+export function scaleToColumns(box: GridBox, from: number, to: number): GridBox {
+  const factor = to / from;
+  return { ...box, x: Math.round(box.x * factor), w: Math.round(box.w * factor) };
+}
 
 /** Clamps a box to the grid: never negative, never wider than the grid. */
 export function clampBox(box: GridBox): GridBox {
@@ -148,11 +179,22 @@ export function pointToCell(
  *
  * Free-form placement is a desktop affordance; reading order on a narrow screen
  * is top-to-bottom, then left-to-right, exactly how the eye already scans it.
+ *
+ * `y` accumulates each item's own height rather than counting positions. Using
+ * the index put a three-row group at `y: 0` and the next field at `y: 1`, so
+ * every group on every phone — they are three rows by default — drew on top of
+ * whatever followed it, and the card's `overflow-hidden` cut off the rest.
  */
 export function toSingleColumn(items: GridItem[]): GridItem[] {
+  let y = 0;
+
   return [...items]
     .sort((a, b) => a.y - b.y || a.x - b.x)
-    .map((item, index) => ({ ...item, x: 0, y: index, w: GRID_COLUMNS, h: item.h }));
+    .map((item) => {
+      const placed = { ...item, x: 0, y, w: GRID_COLUMNS, h: item.h };
+      y += item.h;
+      return placed;
+    });
 }
 
 /** How many rows the layout occupies, for sizing the container. */

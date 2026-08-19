@@ -145,7 +145,7 @@ export type DashboardField = {
 } & FieldValue;
 
 /** A third of the width and one row: what a new field is worth before it holds anything. */
-export const DEFAULT_FIELD_W = 4;
+export const DEFAULT_FIELD_W = 8;
 export const DEFAULT_FIELD_H = 1;
 
 export type FieldValue =
@@ -177,7 +177,7 @@ export function defaultsFor(kind: FieldKind): { config: unknown; value: unknown 
 }
 
 /** A group is a surface, not a reading, so it opens at half width and three rows. */
-export const DEFAULT_GROUP_W = 6;
+export const DEFAULT_GROUP_W = 12;
 export const DEFAULT_GROUP_H = 3;
 
 /**
