@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CELL_HEIGHT,
   clampBox,
   compact,
   firstFreeSlot,
+  GAP,
   GRID_COLUMNS,
   gridHeight,
   groupRowsNeeded,
@@ -12,6 +14,8 @@ import {
   normalise,
   overlaps,
   PREVIOUS_GRID_COLUMNS,
+  PREVIOUS_ROW_HEIGHT,
+  scaleRows,
   scaleToColumns,
   type GridBox,
   pointToCell,
@@ -306,6 +310,48 @@ describe("scaleToColumns", () => {
     for (const [i, one] of row.entries()) {
       for (const other of row.slice(i + 1)) expect(overlaps(one, other)).toBe(false);
     }
+  });
+});
+
+describe("scaleRows", () => {
+  it("doubles a box down the vertical axis", () => {
+    expect(scaleRows({ x: 4, y: 3, w: 8, h: 1 }, 2)).toEqual({ x: 4, y: 6, w: 8, h: 2 });
+  });
+
+  it("leaves the horizontal axis alone", () => {
+    const scaled = scaleRows({ x: 9, y: 0, w: 7, h: 4 }, 2);
+    expect(scaled.x).toBe(9);
+    expect(scaled.w).toBe(7);
+  });
+
+  it("never scales a box below the minimum height", () => {
+    expect(scaleRows({ x: 0, y: 0, w: 8, h: 1 }, 0.25).h).toBe(MIN_H);
+  });
+
+  it("draws every migrated box at exactly the pixels it occupied before", () => {
+    // The whole point of the vertical change, and the thing that would have
+    // gone wrong silently. A field's height is `h * (CELL + GAP) - GAP`, so the
+    // gap is inside the row: halving CELL from 96 to 48 would give a row of 56
+    // and grow every card by 8px for each row it spans. 44 makes the new row 52
+    // — exactly half of 104 — and the geometry is preserved.
+    const NEW_ROW = CELL_HEIGHT + GAP;
+    expect(NEW_ROW * 2).toBe(PREVIOUS_ROW_HEIGHT);
+
+    for (const box of [
+      { x: 0, y: 0, w: 8, h: 1 },
+      { x: 0, y: 1, w: 8, h: 2 },
+      { x: 8, y: 3, w: 12, h: 3 },
+      { x: 0, y: 5, w: 24, h: 6 },
+    ]) {
+      const scaled = scaleRows(box, 2);
+      expect(scaled.y * NEW_ROW).toBe(box.y * PREVIOUS_ROW_HEIGHT);
+      expect(scaled.h * NEW_ROW - GAP).toBe(box.h * PREVIOUS_ROW_HEIGHT - GAP);
+    }
+  });
+
+  it("lets a field be half a row shorter than it could be before", () => {
+    // What the change buys: one new row is 44px where the old floor was 96.
+    expect(MIN_H * (CELL_HEIGHT + GAP) - GAP).toBe(44);
   });
 });
 

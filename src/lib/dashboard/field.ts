@@ -144,9 +144,9 @@ export type DashboardField = {
   children: DashboardField[];
 } & FieldValue;
 
-/** A third of the width and one row: what a new field is worth before it holds anything. */
+/** A third of the width and two rows: what a new field is worth before it holds anything. */
 export const DEFAULT_FIELD_W = 8;
-export const DEFAULT_FIELD_H = 1;
+export const DEFAULT_FIELD_H = 2;
 
 export type FieldValue =
   | { kind: "number"; config: NumberConfig; value: number | null }
@@ -176,9 +176,9 @@ export function defaultsFor(kind: FieldKind): { config: unknown; value: unknown 
   }
 }
 
-/** A group is a surface, not a reading, so it opens at half width and three rows. */
+/** A group is a surface, not a reading, so it opens at half width and six rows. */
 export const DEFAULT_GROUP_W = 12;
-export const DEFAULT_GROUP_H = 3;
+export const DEFAULT_GROUP_H = 6;
 
 /**
  * Rebuilds a typed field from the two opaque jsonb columns.

@@ -4,11 +4,14 @@ import { useRef, useState } from "react";
 
 import type { DashboardField } from "@/lib/dashboard/field";
 import {
+  CELL_HEIGHT,
+  GAP,
   GRID_COLUMNS,
   gridHeight,
   groupRowsNeeded,
   MIN_H,
   MIN_W,
+  NESTED_CELL_HEIGHT,
   normalise,
   toSingleColumn,
   type GridItem,
@@ -16,18 +19,10 @@ import {
 
 import { FieldRow } from "./field-row";
 
-/** One grid row in pixels at the top level. A field is this tall unresized. */
-export const CELL_HEIGHT = 96;
-export const GAP = 8;
-
-/**
- * A group's rows are shorter than the dashboard's.
- *
- * A nested grid is drawn inside a card that is itself only a few rows tall, so
- * borrowing the outer row height would mean a group could never hold more than
- * one thing without being resized first.
- */
-export const NESTED_CELL_HEIGHT = 64;
+// The row geometry lives with the rest of the grid arithmetic, since the gap is
+// inside the row rather than applied over it. Re-exported here because this is
+// where every component already reaches for it.
+export { CELL_HEIGHT, GAP, NESTED_CELL_HEIGHT };
 
 /** What the pointer is doing to a field, and where it grabbed it. */
 type Gesture = {

@@ -23,12 +23,54 @@
  */
 export const GRID_COLUMNS = 24;
 
-/** Smallest usable field: a sixth of the width, one row tall. */
+/**
+ * Smallest usable field: a sixth of the width, one row tall.
+ *
+ * `MIN_H` stays at one even though every stored height doubled — a row is now
+ * half what it was, and being able to ask for a single one of them is the point
+ * of halving it. A one-row field is 44px, which still holds a label and a
+ * reading on one line.
+ */
 export const MIN_W = 4;
 export const MIN_H = 1;
 
 /** What the grid was before it was doubled. See `scaleToColumns`. */
 export const PREVIOUS_GRID_COLUMNS = 12;
+
+/**
+ * The gap between two boxes, in pixels.
+ *
+ * Lives here rather than in the component because it is inside the row: a
+ * field's height is `h * (CELL_HEIGHT + GAP) - GAP`, so the gap is part of the
+ * arithmetic that decides whether a layout keeps its geometry, not a decoration
+ * applied afterwards.
+ */
+export const GAP = 8;
+
+/**
+ * One grid row in pixels at the top level.
+ *
+ * Halved along with the column count, so a field can be half a row tall rather
+ * than rounded up to a whole one. 44 rather than 48 because it is the *row* —
+ * `CELL_HEIGHT + GAP` — that has to halve: 44 + 8 is 52, exactly half of the 104
+ * this grid used to step by, so every migrated box lands on the pixel it already
+ * occupied. 48 would have made the row 56 and grown every card by 8px per row it
+ * spans.
+ */
+export const CELL_HEIGHT = 44;
+
+/**
+ * A group's rows are shorter than the dashboard's.
+ *
+ * A nested grid is drawn inside a card that is itself only a few rows tall, so
+ * borrowing the outer row height would mean a group could never hold more than
+ * one thing without being resized first. 28 + 8 is 36, half of the 72 it was,
+ * for the same reason as above.
+ */
+export const NESTED_CELL_HEIGHT = 28;
+
+/** What a row measured before it was halved. See `scaleRows`. */
+export const PREVIOUS_ROW_HEIGHT = 104;
 
 export type GridBox = { x: number; y: number; w: number; h: number };
 export type GridItem = GridBox & { id: string };
@@ -50,6 +92,18 @@ export type GridItem = GridBox & { id: string };
 export function scaleToColumns(box: GridBox, from: number, to: number): GridBox {
   const factor = to / from;
   return { ...box, x: Math.round(box.x * factor), w: Math.round(box.w * factor) };
+}
+
+/**
+ * The same, down the other axis.
+ *
+ * Rows have no count to scale against — the grid has no bottom — so this takes
+ * the factor directly. It exists because halving the row *height* means every
+ * stored `y` and `h` has to double to keep a layout where it was, and that is
+ * arithmetic worth testing rather than trusting to a `* 2` in SQL.
+ */
+export function scaleRows(box: GridBox, factor: number): GridBox {
+  return { ...box, y: Math.round(box.y * factor), h: Math.max(MIN_H, Math.round(box.h * factor)) };
 }
 
 /** Clamps a box to the grid: never negative, never wider than the grid. */

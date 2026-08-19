@@ -376,7 +376,7 @@ export const dashboardFields = pgTable(
     gridX: integer("grid_x").notNull().default(0),
     gridY: integer("grid_y").notNull().default(0),
     gridW: integer("grid_w").notNull().default(6),
-    gridH: integer("grid_h").notNull().default(1),
+    gridH: integer("grid_h").notNull().default(2),
 
     /**
      * How large the value is drawn: s | m | l | xl.
