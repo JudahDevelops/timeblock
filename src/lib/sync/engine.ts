@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, not, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -21,6 +21,7 @@ import {
   type SyncWindow,
 } from "@/lib/google/client";
 import { claimLocalId, isUuid } from "@/lib/sync/identity";
+import { pendingWithdrawal } from "@/lib/sync/predicates";
 import { conflictFields, reconcile } from "@/lib/sync/reconcile";
 import { mapGoogleEvent, type MappedEvent } from "./map";
 
@@ -251,22 +252,7 @@ export async function purgeTombstones(userId: string, now = new Date()): Promise
         eq(events.bodyRev, 0),
         isNotNull(events.deletedAt),
         lt(events.deletedAt, cutoff),
-        // Purging cascades the link away, and a live link on one of our own
-        // tombstones means the withdrawal never reached Google, so the next
-        // full resync would bring the event back. Google-origin tombstones are
-        // deliberately not guarded here: `pruneOutsideWindow` leaves their
-        // links live on purpose, and guarding them would stop pruned rows from
-        // ever being purged.
-        or(
-          ne(events.origin, "local"),
-          isNotNull(events.recurringEventId),
-          notExists(
-            db
-              .select({ one: sql`1` })
-              .from(eventLinks)
-              .where(and(eq(eventLinks.localEventId, events.id), isNull(eventLinks.deletedAt))),
-          ),
-        ),
+        not(pendingWithdrawal),
       ),
     )
     .returning({ id: events.id });
@@ -331,9 +317,7 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
     elsewhere.get(m.gcalEventId)?.localEventId ??
     (m.tbEventId && isUuid(m.tbEventId) ? m.tbEventId : null);
 
-  const candidates = [
-    ...new Set(mapped.map(localIdFor).filter((id): id is string => id !== null && isUuid(id))),
-  ];
+  const candidates = [...new Set(mapped.map(localIdFor).filter((id): id is string => id !== null))];
   const localRows = candidates.length
     ? await db
         .select({
@@ -348,15 +332,11 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
         })
         .from(events)
         // Deliberately unscoped by user: the only way to know a candidate id
-        // is someone else's is to see who owns it, which is what `owners`
-        // below is for. The write further down is what stays scoped — see
-        // `claimLocalId`.
+        // is someone else's is to see who owns it, which `claimLocalId`
+        // reads. The write further down is what stays scoped.
         .where(inArray(events.id, candidates))
     : [];
-  const owners = new Map(localRows.map((row) => [row.id, row.userId]));
-  const locals = new Map(
-    localRows.filter((row) => row.userId === connection.userId).map((row) => [row.id, row]),
-  );
+  const rows = new Map(localRows.map((row) => [row.id, row]));
 
   const now = new Date();
   const outcome: PageOutcome = { ...NOTHING };
@@ -368,13 +348,13 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
   const conflicts: (typeof syncConflicts.$inferInsert)[] = [];
 
   for (const m of mapped) {
-    const claim = claimLocalId(localIdFor(m), owners, connection.userId);
+    const claim = claimLocalId(localIdFor(m), rows, connection.userId);
     if (claim.kind === "foreign") {
       outcome.foreign++;
       continue;
     }
-    const id = claim.kind === "owned" ? claim.id : null;
-    const local = id ? (locals.get(id) ?? null) : null;
+    const local = claim.kind === "owned" ? claim.row : null;
+    const id = local?.id ?? null;
 
     if (m.cancelled) {
       // A cancellation for something we never imported is not a deletion, it

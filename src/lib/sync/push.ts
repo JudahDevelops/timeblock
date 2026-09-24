@@ -4,6 +4,7 @@ import { and, desc, eq, isNotNull, isNull, lt, notExists, or, sql } from "drizzl
 
 import { db } from "@/db";
 import { calendarConnections, eventLinks, events, googleAccounts } from "@/db/schema";
+import { ownedByUs, pendingWithdrawal } from "@/lib/sync/predicates";
 import { canWrite, getAccessToken, GoogleRevokedError } from "@/lib/google/auth";
 import {
   deleteEvent as deleteRemoteEvent,
@@ -26,7 +27,7 @@ export type PushResult = "created" | "updated" | "deleted" | "skipped";
 export async function pushEvent(
   userId: string,
   eventId: string,
-  target?: Writable | null,
+  target: Writable,
 ): Promise<PushResult> {
   const [event] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!event || event.userId !== userId) return "skipped";
@@ -43,10 +44,7 @@ export async function pushEvent(
   const withdrawing = event.deletedAt !== null && event.recurringEventId === null;
   if (!withdrawing && !isPushable(event)) return "skipped";
 
-  const resolved = target ?? (await writableConnection(userId));
-  if (!resolved) return "skipped";
-
-  const { connection, accessToken } = resolved;
+  const { connection, accessToken } = target;
 
   const links = await db
     .select()
@@ -194,25 +192,12 @@ async function writableConnection(userId: string): Promise<Writable | null> {
  *
  * The inline attempt is best-effort by design — a Google outage must never cost
  * the user an edit they already made — so something has to close the loop.
- * Three disjoint cases select a row, all restricted to `origin = 'local'` and
- * non-recurring (a recurring instance is never pushable — see `pushEvent`):
- *
- *   1. Never pushed: a live block of ours with no link of any kind.
- *   2. Changed since the last push, or a won conflict (`applyPage`'s `relink`
- *      path clears `last_pushed_at` when local wins).
- *   3. A deletion of ours that Google has not confirmed yet — the link is
- *      still live because the withdrawal never succeeded.
- *
- * What is deliberately *not* selected, so the sweep never spends its budget on
- * dead rows: a tombstone whose withdrawal already succeeded (no live link left
- * to match case 3), a retired link left by `pushEvent` finding the event gone
- * in Google (case 1 would otherwise recreate it — `pushEvent` also refuses this
- * directly, belt and braces), and any Google-origin tombstone. That last one
- * matters beyond tidiness: `pruneOutsideWindow` tombstones Google-origin rows
- * that fall outside the sync window and deliberately leaves their link live, a
- * shape indistinguishable in the database from a local deletion that never
- * reached Google. Widening case 3 to Google-origin rows would delete those
- * events from the user's Google Calendar on the next sweep.
+ * Three cases select a row, all within `ownedByUs` (see there for why
+ * Google-origin rows must never widen into this): never pushed, changed since
+ * the last push or a won conflict (`applyPage` clears `last_pushed_at` when
+ * local wins), and a `pendingWithdrawal`. A tombstone whose withdrawal already
+ * succeeded, or a link retired because the event was gone in Google, matches
+ * none of them, so the sweep never spends its budget on dead rows.
  */
 export async function pushPending(userId: string, limit = 50): Promise<Record<PushResult, number>> {
   const target = await writableConnection(userId);
@@ -227,12 +212,10 @@ export async function pushPending(userId: string, limit = 50): Promise<Record<Pu
     .where(
       and(
         eq(events.userId, userId),
+        ownedByUs,
         or(
-          // Never pushed: a live block of ours with no link of any kind.
           and(
             isNull(events.deletedAt),
-            eq(events.origin, "local"),
-            isNull(events.recurringEventId),
             notExists(
               db
                 .select({ one: sql`1` })
@@ -240,24 +223,12 @@ export async function pushPending(userId: string, limit = 50): Promise<Record<Pu
                 .where(eq(eventLinks.localEventId, events.id)),
             ),
           ),
-          // Changed since the last push, or a won conflict (`last_pushed_at` cleared).
           and(
             isNull(events.deletedAt),
-            eq(events.origin, "local"),
-            isNull(events.recurringEventId),
             isNotNull(eventLinks.gcalEventId),
             or(isNull(eventLinks.lastPushedAt), lt(eventLinks.lastPushedAt, events.updatedAt)),
           ),
-          // A deletion of ours that Google has not confirmed yet. Restricted to
-          // origin = 'local' on purpose: see the function comment above for why
-          // widening this to Google-origin rows would delete real events from
-          // the user's Google Calendar.
-          and(
-            isNotNull(events.deletedAt),
-            eq(events.origin, "local"),
-            isNull(events.recurringEventId),
-            isNotNull(eventLinks.gcalEventId),
-          ),
+          pendingWithdrawal,
         ),
       ),
     )
@@ -295,7 +266,8 @@ export async function pushPending(userId: string, limit = 50): Promise<Record<Pu
  */
 export async function pushEventBestEffort(userId: string, eventId: string): Promise<void> {
   try {
-    await pushEvent(userId, eventId);
+    const target = await writableConnection(userId);
+    if (target) await pushEvent(userId, eventId, target);
   } catch (cause) {
     console.error(`Inline push failed for event ${eventId}; leaving it to the sweep`, cause);
   }

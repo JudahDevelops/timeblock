@@ -203,13 +203,6 @@ function isInvalidGrant(error: unknown): boolean {
  * happened to connect second.
  */
 export async function saveGrant(userId: string, tokens: GrantedTokens): Promise<string> {
-  const [existing] = await db
-    .select({ userId: googleAccounts.userId })
-    .from(googleAccounts)
-    .where(eq(googleAccounts.googleSub, tokens.googleSub))
-    .limit(1);
-  if (existing && existing.userId !== userId) throw new GoogleAccountClaimedError();
-
   const [row] = await db
     .insert(googleAccounts)
     .values({
@@ -224,7 +217,6 @@ export async function saveGrant(userId: string, tokens: GrantedTokens): Promise<
     .onConflictDoUpdate({
       target: googleAccounts.googleSub,
       set: {
-        userId,
         email: tokens.email,
         refreshTokenEnc: seal(tokens.refreshToken),
         accessTokenEnc: seal(tokens.accessToken),
@@ -233,8 +225,12 @@ export async function saveGrant(userId: string, tokens: GrantedTokens): Promise<
         // Reconnecting is precisely how a revoked account comes back.
         revokedAt: sql`null`,
       },
+      // In the statement itself, so two concurrent callbacks cannot both pass a
+      // separate ownership check. A refused update returns no row.
+      setWhere: sql`${googleAccounts.userId} = excluded.user_id`,
     })
     .returning({ id: googleAccounts.id });
 
+  if (!row) throw new GoogleAccountClaimedError();
   return row.id;
 }

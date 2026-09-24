@@ -11,7 +11,8 @@ const DEBOUNCE_MS = 800;
 /** A steady typist never stops typing, so saves are forced at this interval. */
 const MAX_WAIT_MS = 5_000;
 /** Bytes. The browser caps a keepalive request body at 64 KiB, shared across
- *  every in-flight keepalive request on the page. Stay comfortably under that. */
+ *  every in-flight keepalive request on the page. Stay comfortably under that.
+ *  Measured encoded: `.length` counts UTF-16 code units, not bytes. */
 const KEEPALIVE_LIMIT = 60_000;
 
 export type SaveState = "idle" | "pending" | "saving" | "saved" | "conflict" | "error";
@@ -80,8 +81,6 @@ export function useBodyAutosave({
             body: payload,
             // Survives the page going away, as a beacon would, but still answers
             // while the page lives — which is what lets `revRef` follow the server.
-            // `&&` short-circuits, so the encode only happens on the keepalive path —
-            // `.length` is UTF-16 code units, not the bytes the browser caps against.
             keepalive:
               keepaliveRef.current &&
               new TextEncoder().encode(payload).byteLength < KEEPALIVE_LIMIT,

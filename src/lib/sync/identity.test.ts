@@ -8,22 +8,22 @@ const CANDIDATE = "33333333-3333-3333-3333-333333333333";
 
 describe("claimLocalId", () => {
   it("claims fresh when the candidate is null", () => {
-    const owners = new Map<string, string>();
+    const owners = new Map<string, { userId: string }>();
     expect(claimLocalId(null, owners, USER)).toEqual({ kind: "fresh" });
   });
 
   it("claims fresh when the candidate matches no row anywhere", () => {
-    const owners = new Map<string, string>();
+    const owners = new Map<string, { userId: string }>();
     expect(claimLocalId(CANDIDATE, owners, USER)).toEqual({ kind: "fresh" });
   });
 
   it("claims owned when the candidate belongs to this user", () => {
-    const owners = new Map([[CANDIDATE, USER]]);
-    expect(claimLocalId(CANDIDATE, owners, USER)).toEqual({ kind: "owned", id: CANDIDATE });
+    const owners = new Map([[CANDIDATE, { userId: USER }]]);
+    expect(claimLocalId(CANDIDATE, owners, USER)).toEqual({ kind: "owned", row: { userId: USER } });
   });
 
   it("claims foreign when the candidate belongs to another user", () => {
-    const owners = new Map([[CANDIDATE, OTHER_USER]]);
+    const owners = new Map([[CANDIDATE, { userId: OTHER_USER }]]);
     expect(claimLocalId(CANDIDATE, owners, USER)).toEqual({ kind: "foreign" });
   });
 });
