@@ -10,6 +10,9 @@ import type { EventDocument } from "@/app/api/events/[id]/body/route";
 const DEBOUNCE_MS = 800;
 /** A steady typist never stops typing, so saves are forced at this interval. */
 const MAX_WAIT_MS = 5_000;
+/** The browser caps a keepalive request body at 64 KiB, shared across every
+ *  in-flight keepalive request on the page. Stay comfortably under that. */
+const KEEPALIVE_LIMIT = 60_000;
 
 export type SaveState = "idle" | "pending" | "saving" | "saved" | "conflict" | "error";
 
@@ -40,6 +43,7 @@ export function useBodyAutosave({
   const debounceRef = useRef<number | null>(null);
   const maxWaitRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
+  const keepaliveRef = useRef(false);
 
   const clearTimers = useCallback(() => {
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
@@ -48,59 +52,73 @@ export function useBodyAutosave({
     maxWaitRef.current = null;
   }, []);
 
-  const flush = useCallback(async () => {
-    // A save is already running. It drains `pendingRef` in a loop, so whatever
-    // arrived meanwhile goes out on its next pass rather than racing this one.
-    if (inFlightRef.current) return;
-    clearTimers();
-    if (pendingRef.current === null) return;
+  const flush = useCallback(
+    async (options?: { keepalive?: boolean }) => {
+      // OR'd in before the in-flight check, so a keepalive request made while a
+      // plain save is already running still upgrades the loop's later passes —
+      // the tab could hide mid-save, and that save's response is what the next
+      // iteration needs to keep `revRef` moving forward.
+      keepaliveRef.current ||= options?.keepalive ?? false;
 
-    inFlightRef.current = true;
-    try {
-      while (pendingRef.current !== null) {
-        const body = pendingRef.current;
-        pendingRef.current = null;
-        setState("saving");
+      // A save is already running. It drains `pendingRef` in a loop, so whatever
+      // arrived meanwhile goes out on its next pass rather than racing this one.
+      if (inFlightRef.current) return;
+      clearTimers();
+      if (pendingRef.current === null) return;
 
-        const response = await fetch(`${basePath}/${eventId}/body`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ body, baseRev: revRef.current }),
-        });
+      inFlightRef.current = true;
+      try {
+        while (pendingRef.current !== null) {
+          const body = pendingRef.current;
+          pendingRef.current = null;
+          setState("saving");
 
-        if (response.status === 409) {
-          const { current } = (await response.json()) as { current: EventDocument };
-          setState("conflict");
-          onConflict(current);
-          return;
+          const payload = JSON.stringify({ body, baseRev: revRef.current });
+          const response = await fetch(`${basePath}/${eventId}/body`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: payload,
+            // Survives the page going away, as a beacon would, but still answers
+            // while the page lives — which is what lets `revRef` follow the server.
+            keepalive: keepaliveRef.current && payload.length < KEEPALIVE_LIMIT,
+          });
+
+          if (response.status === 409) {
+            const { current } = (await response.json()) as { current: EventDocument };
+            setState("conflict");
+            onConflict(current);
+            return;
+          }
+
+          if (!response.ok) {
+            // Put the work back so the next change — or the next flush — retries
+            // it instead of silently dropping the edit.
+            pendingRef.current = body;
+            setState("error");
+            return;
+          }
+
+          const { bodyRev } = (await response.json()) as { bodyRev: number };
+          revRef.current = bodyRev;
         }
+        setState("saved");
 
-        if (!response.ok) {
-          // Put the work back so the next change — or the next flush — retries
-          // it instead of silently dropping the edit.
-          pendingRef.current = body;
-          setState("error");
-          return;
-        }
-
-        const { bodyRev } = (await response.json()) as { bodyRev: number };
-        revRef.current = bodyRev;
+        // The status window reads its checklist out of this body, so a saved body
+        // is a stale status by definition. Without this the overlay keeps serving
+        // the cached view until the next minute boundary — ticking a sub-task and
+        // watching nothing move for the better part of a minute.
+        //
+        // Prefixed, because the key carries the minute it was fetched for.
+        void queryClient.invalidateQueries({ queryKey: ["status"] });
+      } catch {
+        setState("error");
+      } finally {
+        inFlightRef.current = false;
+        keepaliveRef.current = false;
       }
-      setState("saved");
-
-      // The status window reads its checklist out of this body, so a saved body
-      // is a stale status by definition. Without this the overlay keeps serving
-      // the cached view until the next minute boundary — ticking a sub-task and
-      // watching nothing move for the better part of a minute.
-      //
-      // Prefixed, because the key carries the minute it was fetched for.
-      void queryClient.invalidateQueries({ queryKey: ["status"] });
-    } catch {
-      setState("error");
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, [basePath, clearTimers, eventId, onConflict, queryClient]);
+    },
+    [basePath, clearTimers, eventId, onConflict, queryClient],
+  );
 
   const scheduleSave = useCallback(
     (body: BlockDocument) => {
@@ -123,38 +141,26 @@ export function useBodyAutosave({
     [flush],
   );
 
-  /**
-   * Last-gasp save for a page that is going away. `fetch` would be cancelled
-   * mid-unload; a beacon is queued by the browser and survives it. No response
-   * comes back, so a conflict here is lost — acceptable, since the alternative
-   * is losing the edit outright.
-   */
-  const beacon = useCallback(() => {
-    const body = pendingRef.current;
-    if (body === null) return;
-    pendingRef.current = null;
-    navigator.sendBeacon(
-      `${basePath}/${eventId}/body`,
-      new Blob([JSON.stringify({ body, baseRev: revRef.current })], { type: "application/json" }),
-    );
-  }, [basePath, eventId]);
-
   useEffect(() => {
     function onHidden() {
       // Backgrounding a tab on mobile is often the last event before the OS
-      // kills it, so this is the only reliable place to persist.
-      if (document.visibilityState === "hidden") beacon();
+      // kills it, so this is the only reliable place to persist. A beacon would
+      // survive that too, but its response is unreadable, so the revision it
+      // advanced on the server was never learned client-side — the next save
+      // then sent the stale revision and 409'd against itself. `keepalive`
+      // survives the same unload while still resolving if the page lives on.
+      if (document.visibilityState === "hidden") void flush({ keepalive: true });
     }
     document.addEventListener("visibilitychange", onHidden);
     return () => document.removeEventListener("visibilitychange", onHidden);
-  }, [beacon]);
+  }, [flush]);
 
   useEffect(() => {
     return () => {
       clearTimers();
-      beacon();
+      void flush({ keepalive: true });
     };
-  }, [beacon, clearTimers]);
+  }, [clearTimers, flush]);
 
   return { state, scheduleSave, flush };
 }
