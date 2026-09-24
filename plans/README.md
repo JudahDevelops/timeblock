@@ -13,11 +13,11 @@ below, ready to be turned into a plan on request.
 
 | Plan                                     | Title                                                                | Priority | Effort | Depends on | Status |
 | ---------------------------------------- | -------------------------------------------------------------------- | -------- | ------ | ---------- | ------ |
-| [001](001-autosave-hidden-tab-rev.md)    | Hiding a tab mid-edit no longer locks the page into a false conflict | P1       | S      | —          | TODO   |
-| [002](002-sync-tenant-isolation.md)      | Inbound sync can never write to another user's rows                  | P1       | M      | —          | TODO   |
-| [003](003-push-sweep-selection.md)       | The push sweep picks only real work, retries every withdrawal        | P1       | M      | 002        | TODO   |
-| [004](004-upgrade-next-advisories.md)    | Next.js past the critical advisory, and CI runs the tests            | P1       | S      | —          | TODO   |
-| [005](005-revoke-client-table-grants.md) | The browser's Supabase key cannot write any table directly           | P2       | S      | —          | TODO   |
+| [001](001-autosave-hidden-tab-rev.md)    | Hiding a tab mid-edit no longer locks the page into a false conflict | P1       | S      | —          | DONE — merged to `main` (fa35c98, 1204a36); manual browser check still owed   |
+| [002](002-sync-tenant-isolation.md)      | Inbound sync can never write to another user's rows                  | P1       | M      | —          | DONE — merged to `main` (f49a7bd..24ff5ab)   |
+| [003](003-push-sweep-selection.md)       | The push sweep picks only real work, never recreates a deleted event | P1       | M      | 002        | DONE — merged to `main` (47077d6); plan revised before dispatch   |
+| [004](004-upgrade-next-advisories.md)    | Next.js past the critical advisory, and CI runs the tests            | P1       | S      | —          | DONE — merged to `main` (ddb0320, 1fb6e8c)   |
+| [005](005-revoke-client-table-grants.md) | The browser's Supabase key cannot write any table directly           | P2       | S      | —          | DONE — merged to `main` (910f1a3); **not yet applied** (`npm run db:rls`)   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -53,6 +53,8 @@ Ranked by leverage. Evidence was checked against the code at `2f44196`.
 | B15 | `sync_jobs` rows left in `running` by a killed function are never reclaimed                                                                                                                                                        | bug      | S      | `src/lib/sync/jobs.ts:66-68,93`                                                                 |
 | B16 | Webhook 500s (instead of 404) when the channel-id header isn't a UUID                                                                                                                                                              | bug      | S      | `src/app/api/google/webhook/route.ts:31` → `src/lib/sync/channels.ts:205-210`                   |
 | B17 | `@blocknote/*` 0.52.1 pulls `@tiptap/core` 3.29.2 (high advisory); evaluate BlockNote 0.55.x with a manual editor regression pass                                                                                                  | deps     | M      | `npm audit --omit=dev`, `package.json`                                                          |
+| B18 | Google-origin deletions are never retried by the push sweep: one failed inline withdrawal leaves the event live in Google, the tombstone is purged after 30 days, and a full resync re-imports it. **Needs an explicit "user withdrew this" signal**: `pruneOutsideWindow` tombstones out-of-window Google rows with live links, so `deleted_at` + live link cannot distinguish the two, and inferring it would delete real events from Google (this is why plan 003 was revised) | bug | M | `src/lib/sync/push.ts:195` (`origin = 'local'`), `src/lib/sync/engine.ts:193-216` |
+| B19 | **CI has failed on every `main` push since at least 2026-08-12**: `npm run build` needs `DATABASE_URL` because `src/db/index.ts` reads `serverEnv.databaseUrl` at module load, and CI sets no env. So plan 004's new test step runs, but the job still ends red. Fix: give the CI build step placeholder env values (no real secrets; postgres-js only connects on first query), or make the pool lazy. Verified 2026-09-24: the build exits 0 with placeholder values | DX | S | `gh run list --workflow=ci.yml`, `src/db/index.ts:12-17`, `.github/workflows/ci.yml` |
 
 ## Direction — options for the maintainer, not ranked against bugs
 

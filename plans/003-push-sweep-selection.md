@@ -1,4 +1,14 @@
-# Plan 003: The push sweep picks only real work, retries every withdrawal, and never recreates a deleted event
+# Plan 003: The push sweep picks only real work, and never recreates a deleted event
+
+> **Revised 2026-09-24 during `execute` review, before any dispatch.** The first
+> version widened the withdrawal retry to Google-origin tombstones. That would
+> have **deleted real events from the user's Google Calendar**:
+> `pruneOutsideWindow` (`engine.ts` ~193) tombstones Google-origin rows that fall
+> outside the sync window and deliberately leaves their `event_links` row live,
+> which is the same shape as an unsent withdrawal. The withdrawal case is now
+> local-origin only, as before, and the Google-origin retry moved to the backlog
+> (B18) because it needs an explicit signal the schema doesn't have. The purge
+> guard and the sort order were also corrected. See "Revision notes" at the end.
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -37,11 +47,10 @@ blow the route's 60s `maxDuration` before the pull even starts.
 
 Three correctness bugs sit in the same code:
 
-- **Google-origin deletions are never retried.** `pushEvent` deliberately
-  allows withdrawing Google-origin events, but `pushPending` filters to
-  `origin = 'local'`. So one failed inline delete leaves the event live in
-  Google. `purgeTombstones` then deletes the tombstone after 30 days, and the
-  next full resync imports the event again. The deleted meeting comes back.
+- **A local deletion whose withdrawal is still outstanding gets purged.**
+  `purgeTombstones` deletes any 30-day-old tombstone, and the link cascades
+  away with it, even when that link is still live because Google never
+  confirmed the delete. The next full resync then imports the event again.
 - **A link retired because the event was deleted in Google gets recreated.**
   `pushEvent` retires the link on a 404/410 PATCH "so the block stays local".
   But the row then has no live link, so the next sweep selects it and
@@ -282,46 +291,68 @@ or(
     isNotNull(eventLinks.gcalEventId),
     or(isNull(eventLinks.lastPushedAt), lt(eventLinks.lastPushedAt, events.updatedAt)),
   ),
-  // A withdrawal Google has not confirmed yet, whichever side created the event.
+  // A deletion of ours that Google has not confirmed yet.
   and(
     isNotNull(events.deletedAt),
+    eq(events.origin, "local"),
     isNull(events.recurringEventId),
     isNotNull(eventLinks.gcalEventId),
   ),
 ),
 ```
 
-Add `.orderBy(asc(events.updatedAt))` before `.limit(limit)`, so the oldest
-outstanding work goes first and nothing can starve behind newer rows. Import
-`asc` and `notExists` from `drizzle-orm`. Both are exported by the installed
-version; check with
-`grep -n "export declare function notExists\|export declare function asc" -r node_modules/drizzle-orm/sql/`.
+**The withdrawal case MUST keep `eq(events.origin, "local")`.** Do not widen it
+to Google-origin rows, however reasonable that looks. `pruneOutsideWindow` in
+`engine.ts` tombstones Google-origin rows that fall outside the sync window and
+leaves their link live on purpose. In the database that is indistinguishable
+from a user deletion that never reached Google, and `pushEvent` would answer it
+by deleting the event from the user's Google Calendar. Say this in a
+why-comment on the withdrawal case.
+
+Add `.orderBy(desc(events.updatedAt))` before `.limit(limit)`. Newest first is
+deliberate. A row whose push fails on every sweep (e.g. an invalid `tz`) keeps
+its old `updated_at`, so newest-first lets such rows sink to the back instead
+of permanently filling the 50-row budget. New work could starve old work only
+if one user produced more than 50 edits every five minutes. Say this in the
+comment. Import `desc` and `notExists` from `drizzle-orm`. Both are exported by
+the installed version; check with
+`grep -rn "export declare function notExists\|export declare function desc" node_modules/drizzle-orm/sql/`.
 
 Rewrite the JSDoc above `pushPending` to describe the three cases and why dead
-rows (tombstones already withdrawn, recurring instances, retired links) are
-excluded rather than selected and skipped.
+rows (tombstones already withdrawn, recurring instances, retired links,
+Google-origin tombstones) are excluded rather than selected and skipped.
 
 **Verify**:
 
 - `npm run typecheck && npm run build` → exit 0
-- `grep -n 'eq(events.origin, "local")' src/lib/sync/push.ts` → exactly 2 matches in `pushPending` (the withdrawal case has none)
+- `grep -c 'eq(events.origin, "local")' src/lib/sync/push.ts` → `3` (one per case in `pushPending`)
 
 ### Step 4: Don't purge a tombstone whose withdrawal is still outstanding
 
-In `engine.ts` `purgeTombstones`, add to the `and(...)`:
+In `engine.ts` `purgeTombstones`, add to the `and(...)` a guard that spares
+exactly the rows the sweep's withdrawal case would still select (local-origin,
+not a recurring instance, live link):
 
 ```ts
-notExists(
-  db
-    .select({ one: sql`1` })
-    .from(eventLinks)
-    .where(and(eq(eventLinks.localEventId, events.id), isNull(eventLinks.deletedAt))),
+or(
+  ne(events.origin, "local"),
+  isNotNull(events.recurringEventId),
+  notExists(
+    db
+      .select({ one: sql`1` })
+      .from(eventLinks)
+      .where(and(eq(eventLinks.localEventId, events.id), isNull(eventLinks.deletedAt))),
+  ),
 ),
 ```
 
-Add a why-comment: purging cascades the link away, and a live link on a
-tombstone means Google still holds the event, so the next full resync would
-bring it back.
+Import `ne` and `notExists` from `drizzle-orm` if `engine.ts` doesn't already.
+
+Add a why-comment: purging cascades the link away, and a live link on one of
+our own tombstones means the withdrawal never reached Google, so the next full
+resync would bring the event back. Google-origin tombstones are deliberately
+not guarded. `pruneOutsideWindow` leaves their links live on purpose, and
+guarding them would stop pruned rows from ever being purged.
 
 **Verify**: `npm run typecheck` → exit 0.
 
@@ -330,8 +361,11 @@ bring it back.
 In the `live` links upsert inside `applyPage` (the first `tx.insert(eventLinks)`,
 **not** the `relink` one), add `lastPushedAt: now` to each value and
 `lastPushedAt: sql\`excluded.last_pushed_at\``to the`set`. Add a why-comment:
-this row now matches Google exactly, and leaving `last_pushed_at`behind the`updated_at` just written would make the sweep PATCH Google with what Google
-just sent.
+this row now matches Google exactly, and leaving `last_pushed_at` behind the
+`updated_at` just written would make the sweep PATCH Google with what Google
+just sent. Use the **same** `now` variable that the events upsert writes into
+`updated_at`. The sweep compares with a strict `lt`, so equal timestamps read
+as "already pushed".
 
 **Verify**:
 
@@ -358,7 +392,9 @@ just sent.
 ## Done criteria
 
 - [ ] `grep -n "notExists" src/lib/sync/push.ts src/lib/sync/engine.ts` → matches in both files
-- [ ] `grep -n "orderBy(asc(events.updatedAt))" src/lib/sync/push.ts` → 1 match
+- [ ] `grep -n "orderBy(desc(events.updatedAt))" src/lib/sync/push.ts` → 1 match
+- [ ] `grep -c 'eq(events.origin, "local")' src/lib/sync/push.ts` → 3
+- [ ] `grep -n 'ne(events.origin, "local")' src/lib/sync/engine.ts` → 1 match, inside `purgeTombstones`
 - [ ] `grep -n "excluded.last_pushed_at" src/lib/sync/engine.ts` → 1 match
 - [ ] `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` all exit 0
 - [ ] `git status` shows only `src/lib/sync/push.ts`, `src/lib/sync/engine.ts`, `plans/README.md` modified; no `probe.mts`
@@ -369,17 +405,23 @@ just sent.
 Stop and report back (do not improvise) if:
 
 - `push.ts` doesn't match the excerpts above.
-- `notExists` or `asc` isn't exported by the installed `drizzle-orm`.
+- `notExists`, `desc` or `ne` isn't exported by the installed `drizzle-orm`.
+- Any step seems to call for selecting or withdrawing Google-origin tombstones.
+  That is the change this plan was revised to remove.
 - The probe shows the new predicate selecting **more** rows than the old one for any user.
 - Satisfying a step seems to require changing `isPushable`, `reconcile.ts` or the `relink` upsert.
 
 ## Maintenance notes
 
-- A withdrawal Google keeps refusing (e.g. a persistent 403 on an event the
-  user is only invited to) will now be retried every sweep, and its tombstone
-  is never purged. That is deliberate: it is visible, not silent. If it shows
-  up in logs, handle it explicitly. Don't reuse `isForbidden` for this: it also
-  matches 401, which means a token problem, not a refusal.
+- A withdrawal of one of our own blocks that Google keeps refusing will now be
+  retried every sweep, and its tombstone is never purged. That is deliberate:
+  it is visible, not silent. If it shows up in logs, handle it explicitly.
+  Don't reuse `isForbidden` for this: it also matches 401, which means a token
+  problem, not a refusal.
+- **Google-origin deletions are still not retried by the sweep** (backlog B18).
+  Fixing that needs a signal that tells "the user deleted this" apart from
+  "prune tombstoned this", such as a dedicated column or a queued job.
+  Never infer it from `deleted_at` plus a live link.
 - If recurring-instance withdrawal is ever implemented (backlog item 7 in
   `docs/analysis/comparable-platforms.md`), the `isNull(events.recurringEventId)`
   in the withdrawal case is the line to revisit.
@@ -388,3 +430,16 @@ Stop and report back (do not improvise) if:
 - Reviewer: diff the three cases against the old four-way `or` and confirm no
   legitimate case was dropped. The one intentional drop is "no live link but a
   retired link exists and the row is live", which is the recreate bug.
+
+## Revision notes (2026-09-24)
+
+Changed during `execute` review, before any executor saw the plan:
+
+1. Withdrawal case restricted to `origin = 'local'`. The original widening
+   would have made every full resync delete out-of-window events from Google
+   (`pruneOutsideWindow` tombstones them with live links). The "Google-origin
+   deletions never retried" bug moved to backlog B18.
+2. Purge guard narrowed to match the withdrawal case exactly. The original
+   would have stopped Google-origin pruned tombstones from ever being purged.
+3. Sort flipped from `asc` to `desc`. Oldest-first let 50 rows that fail on
+   every sweep occupy the whole budget forever.

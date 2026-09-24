@@ -264,3 +264,10 @@ Stop and report back (do not improvise) if:
   `catch`.
 - Reviewer: check that a plain `flush()` (Escape to close the drawer, the
   unmount flush in `page-detail.tsx`) behaves exactly as before.
+- **Added at review (2026-09-24):** the unmount cleanup now depends on `flush`,
+  and `flush` depends on `onConflict`. Both callers pass a
+  `useCallback(..., [])` handler, so `flush` only changes with `eventId` or
+  `basePath`, as `beacon` did. A future caller that passes an unstable
+  `onConflict` would make that cleanup run on every render. It would clear the
+  debounce and save on every keystroke. Keep `onConflict` stable, or hold it in
+  a ref inside the hook.
