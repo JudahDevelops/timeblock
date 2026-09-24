@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, notExists, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { calendarConnections, eventLinks, events, googleAccounts } from "@/db/schema";
@@ -23,7 +23,11 @@ export type PushResult = "created" | "updated" | "deleted" | "skipped";
  * Idempotent by way of `event_links`: the link decides create-versus-update,
  * never a title or time match.
  */
-export async function pushEvent(userId: string, eventId: string): Promise<PushResult> {
+export async function pushEvent(
+  userId: string,
+  eventId: string,
+  target?: Writable | null,
+): Promise<PushResult> {
   const [event] = await db.select().from(events).where(eq(events.id, eventId)).limit(1);
   if (!event || event.userId !== userId) return "skipped";
 
@@ -39,12 +43,12 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
   const withdrawing = event.deletedAt !== null && event.recurringEventId === null;
   if (!withdrawing && !isPushable(event)) return "skipped";
 
-  const target = await writableConnection(userId);
-  if (!target) return "skipped";
+  const resolved = target ?? (await writableConnection(userId));
+  if (!resolved) return "skipped";
 
-  const { connection, accessToken } = target;
+  const { connection, accessToken } = resolved;
 
-  const [link] = await db
+  const links = await db
     .select()
     .from(eventLinks)
     .where(
@@ -52,17 +56,19 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
         eq(eventLinks.localEventId, eventId),
         eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
       ),
-    )
-    .limit(1);
+    );
+
+  const live = links.find((l) => l.deletedAt === null) ?? null;
+  const retired = links.some((l) => l.deletedAt !== null);
 
   const now = new Date();
 
   if (withdrawing) {
     // Nothing was ever pushed, so there is nothing to withdraw.
-    if (!link || link.deletedAt) return "skipped";
+    if (!live) return "skipped";
 
     try {
-      await deleteRemoteEvent(accessToken, connection.gcalCalendarId, link.gcalEventId);
+      await deleteRemoteEvent(accessToken, connection.gcalCalendarId, live.gcalEventId);
     } catch (cause) {
       // Already gone in Google is the outcome we wanted, not a failure.
       if (!(cause instanceof GoogleApiError) || !cause.isGone) throw cause;
@@ -74,7 +80,7 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
       .where(
         and(
           eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
-          eq(eventLinks.gcalEventId, link.gcalEventId),
+          eq(eventLinks.gcalEventId, live.gcalEventId),
         ),
       );
     return "deleted";
@@ -83,10 +89,10 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
   const payload = toEventWrite(event);
   const descriptionHash = hashDescription(payload.description);
 
-  if (link && !link.deletedAt) {
+  if (live) {
     let remote;
     try {
-      remote = await patchEvent(accessToken, connection.gcalCalendarId, link.gcalEventId, payload);
+      remote = await patchEvent(accessToken, connection.gcalCalendarId, live.gcalEventId, payload);
     } catch (cause) {
       if (!(cause instanceof GoogleApiError) || !cause.isGone) throw cause;
       // Deleted in Google while we still held the link. Recreating it would
@@ -98,18 +104,22 @@ export async function pushEvent(userId: string, eventId: string): Promise<PushRe
         .where(
           and(
             eq(eventLinks.gcalCalendarId, connection.gcalCalendarId),
-            eq(eventLinks.gcalEventId, link.gcalEventId),
+            eq(eventLinks.gcalEventId, live.gcalEventId),
           ),
         );
       return "skipped";
     }
 
-    await recordLink(connection.gcalCalendarId, link.gcalEventId, eventId, remote, {
+    await recordLink(connection.gcalCalendarId, live.gcalEventId, eventId, remote, {
       descriptionHash,
       now,
     });
     return "updated";
   }
+
+  // A retired link means Google no longer holds this event on purpose — deleted
+  // there, or withdrawn by us — so inserting a fresh one would undo that.
+  if (retired) return "skipped";
 
   const remote = await insertEvent(accessToken, connection.gcalCalendarId, payload);
   await recordLink(connection.gcalCalendarId, remote.id, eventId, remote, {
@@ -183,12 +193,33 @@ async function writableConnection(userId: string): Promise<Writable | null> {
  * Retries whatever the inline push did not manage.
  *
  * The inline attempt is best-effort by design — a Google outage must never cost
- * the user an edit they already made — so something has to close the loop. A
- * row qualifies when it has no link at all, when it changed after the last time
- * we pushed it, or when the inbound sync cleared `last_pushed_at` to say our
- * version won a conflict and has to go out again.
+ * the user an edit they already made — so something has to close the loop.
+ * Three disjoint cases select a row, all restricted to `origin = 'local'` and
+ * non-recurring (a recurring instance is never pushable — see `pushEvent`):
+ *
+ *   1. Never pushed: a live block of ours with no link of any kind.
+ *   2. Changed since the last push, or a won conflict (`applyPage`'s `relink`
+ *      path clears `last_pushed_at` when local wins).
+ *   3. A deletion of ours that Google has not confirmed yet — the link is
+ *      still live because the withdrawal never succeeded.
+ *
+ * What is deliberately *not* selected, so the sweep never spends its budget on
+ * dead rows: a tombstone whose withdrawal already succeeded (no live link left
+ * to match case 3), a retired link left by `pushEvent` finding the event gone
+ * in Google (case 1 would otherwise recreate it — `pushEvent` also refuses this
+ * directly, belt and braces), and any Google-origin tombstone. That last one
+ * matters beyond tidiness: `pruneOutsideWindow` tombstones Google-origin rows
+ * that fall outside the sync window and deliberately leaves their link live, a
+ * shape indistinguishable in the database from a local deletion that never
+ * reached Google. Widening case 3 to Google-origin rows would delete those
+ * events from the user's Google Calendar on the next sweep.
  */
 export async function pushPending(userId: string, limit = 50): Promise<Record<PushResult, number>> {
+  const target = await writableConnection(userId);
+  // Nothing can be pushed without a writable connection, and today every
+  // selected row pays for discovering that on its own.
+  if (!target) return { created: 0, updated: 0, deleted: 0, skipped: 0 };
+
   const pending = await db
     .select({ id: events.id })
     .from(events)
@@ -196,24 +227,53 @@ export async function pushPending(userId: string, limit = 50): Promise<Record<Pu
     .where(
       and(
         eq(events.userId, userId),
-        eq(events.origin, "local"),
         or(
-          isNull(eventLinks.gcalEventId),
-          isNull(eventLinks.lastPushedAt),
-          lt(eventLinks.lastPushedAt, events.updatedAt),
-          // A local deletion still has to reach Google, and its link is still
-          // live until the delete succeeds.
-          and(isNotNull(events.deletedAt), isNull(eventLinks.deletedAt)),
+          // Never pushed: a live block of ours with no link of any kind.
+          and(
+            isNull(events.deletedAt),
+            eq(events.origin, "local"),
+            isNull(events.recurringEventId),
+            notExists(
+              db
+                .select({ one: sql`1` })
+                .from(eventLinks)
+                .where(eq(eventLinks.localEventId, events.id)),
+            ),
+          ),
+          // Changed since the last push, or a won conflict (`last_pushed_at` cleared).
+          and(
+            isNull(events.deletedAt),
+            eq(events.origin, "local"),
+            isNull(events.recurringEventId),
+            isNotNull(eventLinks.gcalEventId),
+            or(isNull(eventLinks.lastPushedAt), lt(eventLinks.lastPushedAt, events.updatedAt)),
+          ),
+          // A deletion of ours that Google has not confirmed yet. Restricted to
+          // origin = 'local' on purpose: see the function comment above for why
+          // widening this to Google-origin rows would delete real events from
+          // the user's Google Calendar.
+          and(
+            isNotNull(events.deletedAt),
+            eq(events.origin, "local"),
+            isNull(events.recurringEventId),
+            isNotNull(eventLinks.gcalEventId),
+          ),
         ),
       ),
     )
+    // Newest first. A row whose push fails on every sweep (an invalid `tz`,
+    // say) keeps its old `updated_at`, so this lets such rows sink to the back
+    // instead of permanently filling the budget. New work could only starve
+    // old work if one user produced more than `limit` edits every five
+    // minutes.
+    .orderBy(desc(events.updatedAt))
     .limit(limit);
 
   const tally: Record<PushResult, number> = { created: 0, updated: 0, deleted: 0, skipped: 0 };
 
   for (const row of pending) {
     try {
-      tally[await pushEvent(userId, row.id)]++;
+      tally[await pushEvent(userId, row.id, target)]++;
     } catch (cause) {
       // One bad event must not strand the rest of the queue.
       if (cause instanceof GoogleRevokedError) throw cause;

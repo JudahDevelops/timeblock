@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -251,6 +251,22 @@ export async function purgeTombstones(userId: string, now = new Date()): Promise
         eq(events.bodyRev, 0),
         isNotNull(events.deletedAt),
         lt(events.deletedAt, cutoff),
+        // Purging cascades the link away, and a live link on one of our own
+        // tombstones means the withdrawal never reached Google, so the next
+        // full resync would bring the event back. Google-origin tombstones are
+        // deliberately not guarded here: `pruneOutsideWindow` leaves their
+        // links live on purpose, and guarding them would stop pruned rows from
+        // ever being purged.
+        or(
+          ne(events.origin, "local"),
+          isNotNull(events.recurringEventId),
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(eventLinks)
+              .where(and(eq(eventLinks.localEventId, events.id), isNull(eventLinks.deletedAt))),
+          ),
+        ),
       ),
     )
     .returning({ id: events.id });
@@ -486,6 +502,10 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
             gcalEtag: m.etag,
             gcalUpdated: m.updated,
             lastPulledAt: now,
+            // This row now matches Google exactly. Leaving `last_pushed_at`
+            // behind the `updated_at` just written would make the sweep PATCH
+            // Google right back with what Google just sent.
+            lastPushedAt: now,
             deletedAt: null,
           })),
         )
@@ -496,6 +516,7 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
             gcalEtag: sql`excluded.gcal_etag`,
             gcalUpdated: sql`excluded.gcal_updated`,
             lastPulledAt: sql`excluded.last_pulled_at`,
+            lastPushedAt: sql`excluded.last_pushed_at`,
             deletedAt: sql`null`,
           },
         });
