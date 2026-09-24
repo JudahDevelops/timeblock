@@ -83,6 +83,9 @@ export function mapGoogleEvent(event: GoogleEvent, calendarTz: string): MappedEv
  * An all-day event carries a bare `date`, which names a calendar day rather
  * than a moment. Reading it as UTC would slide the block onto the wrong day for
  * anyone not on UTC, so it is anchored to midnight in the event's own zone.
+ * TZDate's string constructor parses in the machine's local zone, not `tz`,
+ * so the date is split into numeric parts and passed to the numeric
+ * constructor, which does interpret its components in `tz`.
  */
 function toInstant(value: GoogleDateTime | undefined, tz: string): Date | null {
   if (!value) return null;
@@ -91,7 +94,10 @@ function toInstant(value: GoogleDateTime | undefined, tz: string): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   if (value.date) {
-    const parsed = new TZDate(`${value.date}T00:00:00`, tz);
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.date);
+    if (!match) return null;
+    const [, year, month, day] = match;
+    const parsed = new TZDate(Number(year), Number(month) - 1, Number(day), tz);
     return Number.isNaN(parsed.getTime()) ? null : new Date(parsed.getTime());
   }
   return null;

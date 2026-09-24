@@ -50,6 +50,27 @@ describe("mapGoogleEvent", () => {
     expect(mapped!.endsAt.toISOString()).toBe("2026-07-29T23:00:00.000Z");
   });
 
+  it("anchors an all-day event to midnight in a zone west of UTC", () => {
+    const mapped = mapGoogleEvent(
+      {
+        id: "d2",
+        summary: "Public holiday",
+        start: { date: "2026-07-29" },
+        end: { date: "2026-07-30" },
+      },
+      "America/New_York",
+    );
+
+    expect(mapped!.allDay).toBe(true);
+    // EDT is UTC-4, so midnight in New York is 04:00 UTC the same day.
+    expect(mapped!.startsAt.toISOString()).toBe("2026-07-29T04:00:00.000Z");
+    expect(mapped!.endsAt.toISOString()).toBe("2026-07-30T04:00:00.000Z");
+  });
+
+  it("drops an all-day event with a malformed date", () => {
+    expect(mapGoogleEvent({ id: "bad", start: { date: "not-a-date" } }, "UTC")).toBeNull();
+  });
+
   it("falls back to the calendar's zone when the event names none", () => {
     const mapped = mapGoogleEvent(
       {
