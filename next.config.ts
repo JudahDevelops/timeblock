@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    // Nothing imports next/image, and the /_next/image endpoint deliberately
+    // bypasses the auth proxy (src/proxy.ts). Leaving the optimizer on is
+    // attack surface with no benefit. If next/image is ever adopted, remove
+    // this deliberately and add explicit images.remotePatterns.
+    unoptimized: true,
+  },
   experimental: {
     /**
      * The client router cache defaults to 0s for dynamic routes, so stepping
