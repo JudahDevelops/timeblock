@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { calendarConnections } from "@/db/schema";
 import { secretsMatch } from "@/lib/crypto";
-import { canWrite, exchangeCode, saveGrant } from "@/lib/google/auth";
+import { canWrite, exchangeCode, GoogleAccountClaimedError, saveGrant } from "@/lib/google/auth";
 import { ensureChannel } from "@/lib/sync/channels";
 import { syncConnection } from "@/lib/sync/engine";
 import { requireUserId } from "@/server/auth";
@@ -74,6 +74,9 @@ export async function GET(request: Request) {
 
     connectionId = connection.id;
   } catch (cause) {
+    if (cause instanceof GoogleAccountClaimedError) {
+      return back(request, { error: "account_in_use" });
+    }
     console.error("Google OAuth callback failed", cause);
     return back(request, { error: "exchange_failed" });
   }

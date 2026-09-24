@@ -111,6 +111,14 @@ export class GoogleRevokedError extends Error {
   }
 }
 
+/** The Google account is already connected to a different Timeblock user. */
+export class GoogleAccountClaimedError extends Error {
+  constructor() {
+    super("Google account is connected to another user");
+    this.name = "GoogleAccountClaimedError";
+  }
+}
+
 /**
  * A usable access token for an account, refreshing if it is close to expiry.
  *
@@ -182,8 +190,20 @@ function isInvalidGrant(error: unknown): boolean {
 /**
  * Stores a fresh grant, keyed on the Google account rather than ours: connecting
  * the same Google account twice must update one row, not accumulate them.
+ *
+ * Refuses to move an existing account to a different Timeblock user — without
+ * this, `onConflictDoUpdate` below would silently reassign `userId`, and every
+ * event, link and connection that account owns would start syncing to whoever
+ * happened to connect second.
  */
 export async function saveGrant(userId: string, tokens: GrantedTokens): Promise<string> {
+  const [existing] = await db
+    .select({ userId: googleAccounts.userId })
+    .from(googleAccounts)
+    .where(eq(googleAccounts.googleSub, tokens.googleSub))
+    .limit(1);
+  if (existing && existing.userId !== userId) throw new GoogleAccountClaimedError();
+
   const [row] = await db
     .insert(googleAccounts)
     .values({

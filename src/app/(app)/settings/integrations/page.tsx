@@ -12,6 +12,7 @@ const ERRORS: Record<string, string> = {
   state_mismatch: "That sign-in link expired. Try connecting again.",
   exchange_failed: "Google refused the connection. Try again.",
   sync_failed: "Connected, but the first import failed. Use Sync now to retry.",
+  account_in_use: "That Google account is already connected to a different Timeblock account.",
 };
 
 export default async function IntegrationsPage({
