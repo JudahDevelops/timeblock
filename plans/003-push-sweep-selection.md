@@ -361,10 +361,8 @@ guarding them would stop pruned rows from ever being purged.
 In the `live` links upsert inside `applyPage` (the first `tx.insert(eventLinks)`,
 **not** the `relink` one), add `lastPushedAt: now` to each value and
 `lastPushedAt: sql\`excluded.last_pushed_at\``to the`set`. Add a why-comment:
-this row now matches Google exactly, and leaving `last_pushed_at` behind the
-`updated_at` just written would make the sweep PATCH Google with what Google
-just sent. Use the **same** `now` variable that the events upsert writes into
-`updated_at`. The sweep compares with a strict `lt`, so equal timestamps read
+this row now matches Google exactly, and leaving `last_pushed_at`behind the`updated_at`just written would make the sweep PATCH Google with what Google
+just sent. Use the **same**`now`variable that the events upsert writes into`updated_at`. The sweep compares with a strict `lt`, so equal timestamps read
 as "already pushed".
 
 **Verify**:
