@@ -128,7 +128,10 @@ export class GoogleAccountClaimedError extends Error {
  * each time, so the loser would then make calls with a token that just died.
  */
 export async function getAccessToken(accountId: string): Promise<string> {
-  return db.transaction(async (tx) => {
+  // Revocation is returned out of the transaction, not thrown inside it: a throw
+  // rolls back the `revoked_at` write, so the grant was never marked dead, no
+  // reconnect banner ever appeared, and every run asked Google again.
+  const token = await db.transaction(async (tx): Promise<string | null> => {
     const [account] = await tx
       .select()
       .from(googleAccounts)
@@ -164,7 +167,7 @@ export async function getAccessToken(accountId: string): Promise<string> {
           .update(googleAccounts)
           .set({ revokedAt: new Date() })
           .where(eq(googleAccounts.id, accountId));
-        throw new GoogleRevokedError(accountId);
+        return null;
       }
       throw error;
     }
@@ -176,6 +179,9 @@ export async function getAccessToken(accountId: string): Promise<string> {
 
     return accessToken;
   });
+
+  if (token === null) throw new GoogleRevokedError(accountId);
+  return token;
 }
 
 function isInvalidGrant(error: unknown): boolean {
