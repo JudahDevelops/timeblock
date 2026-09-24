@@ -470,6 +470,10 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
             deletedAt: sql`null`,
             updatedAt: sql`excluded.updated_at`,
           },
+          // Belt and braces: even if identity resolution above regressed,
+          // Postgres itself refuses to let this upsert rewrite a row owned by
+          // someone else.
+          setWhere: sql`${events.userId} = excluded.user_id`,
         });
 
       await tx
