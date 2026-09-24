@@ -20,6 +20,7 @@ import {
   syncWindow,
   type SyncWindow,
 } from "@/lib/google/client";
+import { claimLocalId, isUuid } from "@/lib/sync/identity";
 import { conflictFields, reconcile } from "@/lib/sync/reconcile";
 import { mapGoogleEvent, type MappedEvent } from "./map";
 
@@ -47,6 +48,8 @@ export type SyncOutcome = {
   conflicts: number;
   /** Cancellations that were a calendar move, not a deletion. */
   moved: number;
+  /** events whose identity belongs to another user; left alone rather than written */
+  foreign: number;
   /** Rows the window no longer covers. See `pruneOutsideWindow`. */
   pruned: number;
   syncToken: string | null;
@@ -62,6 +65,7 @@ const NOTHING: PageOutcome = {
   withdrawn: 0,
   conflicts: 0,
   moved: 0,
+  foreign: 0,
 };
 
 type Connection = typeof calendarConnections.$inferSelect;
@@ -309,13 +313,16 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
   const localIdFor = (m: MappedEvent): string | null =>
     here.get(m.gcalEventId)?.localEventId ??
     elsewhere.get(m.gcalEventId)?.localEventId ??
-    m.tbEventId;
+    (m.tbEventId && isUuid(m.tbEventId) ? m.tbEventId : null);
 
-  const candidates = [...new Set(mapped.map(localIdFor).filter((id): id is string => id !== null))];
+  const candidates = [
+    ...new Set(mapped.map(localIdFor).filter((id): id is string => id !== null && isUuid(id))),
+  ];
   const localRows = candidates.length
     ? await db
         .select({
           id: events.id,
+          userId: events.userId,
           origin: events.origin,
           title: events.title,
           startsAt: events.startsAt,
@@ -324,23 +331,33 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
           deletedAt: events.deletedAt,
         })
         .from(events)
-        // Scoped by user, so an id lifted from a foreign calendar's extended
-        // properties can never reach somebody else's block.
-        .where(and(eq(events.userId, connection.userId), inArray(events.id, candidates)))
+        // Deliberately unscoped by user: the only way to know a candidate id
+        // is someone else's is to see who owns it, which is what `owners`
+        // below is for. The write further down is what stays scoped — see
+        // `claimLocalId`.
+        .where(inArray(events.id, candidates))
     : [];
-  const locals = new Map(localRows.map((row) => [row.id, row]));
+  const owners = new Map(localRows.map((row) => [row.id, row.userId]));
+  const locals = new Map(
+    localRows.filter((row) => row.userId === connection.userId).map((row) => [row.id, row]),
+  );
 
   const now = new Date();
   const outcome: PageOutcome = { ...NOTHING };
 
   const write: Array<{ m: MappedEvent; id: string }> = [];
-  const relink: MappedEvent[] = [];
+  const relink: Array<{ m: MappedEvent; id: string }> = [];
   const dead: Array<{ m: MappedEvent; id: string }> = [];
   const movedOut: MappedEvent[] = [];
   const conflicts: (typeof syncConflicts.$inferInsert)[] = [];
 
   for (const m of mapped) {
-    const id = localIdFor(m);
+    const claim = claimLocalId(localIdFor(m), owners, connection.userId);
+    if (claim.kind === "foreign") {
+      outcome.foreign++;
+      continue;
+    }
+    const id = claim.kind === "owned" ? claim.id : null;
     const local = id ? (locals.get(id) ?? null) : null;
 
     if (m.cancelled) {
@@ -390,7 +407,7 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
       continue;
     }
     if (verdict === "keep") {
-      relink.push(m);
+      relink.push({ m, id: local!.id });
       outcome.kept++;
       continue;
     }
@@ -490,10 +507,10 @@ async function applyPage(connection: Connection, mapped: MappedEvent[]): Promise
       await tx
         .insert(eventLinks)
         .values(
-          relink.map((m) => ({
+          relink.map(({ m, id }) => ({
             gcalCalendarId: connection.gcalCalendarId,
             gcalEventId: m.gcalEventId,
-            localEventId: locals.get(localIdFor(m)!)!.id,
+            localEventId: id,
             gcalEtag: m.etag,
             gcalUpdated: m.updated,
             lastPulledAt: now,
