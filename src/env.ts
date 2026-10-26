@@ -19,20 +19,6 @@ export const serverEnv = {
   get supabaseServiceRoleKey() {
     return required("SUPABASE_SERVICE_ROLE_KEY");
   },
-  get googleClientId() {
-    return required("GOOGLE_CLIENT_ID");
-  },
-  get googleClientSecret() {
-    return required("GOOGLE_CLIENT_SECRET");
-  },
-  /** 32-byte key, base64. Encrypts Google refresh tokens at rest. */
-  get tokenEncryptionKey() {
-    return required("TOKEN_ENCRYPTION_KEY");
-  },
-  /** Shared secret guarding the scheduled entrypoints. */
-  get cronSecret() {
-    return required("CRON_SECRET");
-  },
 };
 
 function requirePublic(name: string, value: string | undefined): string {

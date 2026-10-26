@@ -262,20 +262,10 @@ function Nav({
       <DashboardsSection dashboards={dashboards} onNavigate={onNavigate} />
       <PagesSection pages={pages} onNavigate={onNavigate} />
 
-      {/* Bottom section: theme, integrations, account */}
+      {/* Bottom section: theme, account */}
       <div className="border-line mt-auto border-t pt-4">
         <div className="px-2">
           <ThemeToggle />
-        </div>
-
-        <div className="mt-3">
-          <NavLink
-            href="/settings/integrations"
-            active={pathname.startsWith("/settings")}
-            onNavigate={onNavigate}
-          >
-            Integrations
-          </NavLink>
         </div>
 
         <div className="mt-4 space-y-2">

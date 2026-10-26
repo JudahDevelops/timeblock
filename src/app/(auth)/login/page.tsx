@@ -14,7 +14,7 @@ export default function LoginPage() {
         </p>
 
         <div className="mt-8">
-          <Suspense fallback={<div className="bg-surface-raised h-11 rounded-lg" />}>
+          <Suspense fallback={<div className="bg-surface-raised h-52 rounded-lg" />}>
             <LoginForm />
           </Suspense>
         </div>

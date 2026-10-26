@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 
 /**
- * Recoverable failures inside the app shell — a query that threw, a Google call
- * that fell over mid-render.
+ * Recoverable failures inside the app shell — a query that threw mid-render.
  *
  * Scoped to the group rather than the route so the sidebar and session survive:
  * `reset()` re-renders this segment alone, which is usually enough for a

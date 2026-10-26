@@ -21,7 +21,7 @@ jobs:
       - run: npm run test
       # Placeholders, not secrets. Route modules read env at import time and
       # Next imports them while collecting page data, but nothing connects to
-      # a database or Google during a build.
+      # a database during a build.
       - run: npm run build
         env:
           DATABASE_URL: postgres://build:build@127.0.0.1:1/build
@@ -29,7 +29,3 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
           SUPABASE_SERVICE_ROLE_KEY: placeholder
           NEXT_PUBLIC_APP_URL: https://placeholder.invalid
-          GOOGLE_CLIENT_ID: placeholder
-          GOOGLE_CLIENT_SECRET: placeholder
-          TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-          CRON_SECRET: placeholder

@@ -10,7 +10,7 @@ import type { CalendarEvent } from "@/server/queries/events";
  * Long enough that a write still travelling — the action, the revalidation, the
  * RSC payload — is never overtaken by the stale props it is racing. Short
  * enough that an entry the server will never agree with, because it quietly
- * stored something else, cannot shadow inbound Google edits to that block for
+ * stored something else, cannot shadow edits made to that block elsewhere for
  * the rest of the session. That is what an overlay with no expiry does.
  */
 const SETTLE_MS = 15_000;

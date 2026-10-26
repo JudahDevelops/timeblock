@@ -18,20 +18,19 @@ bound to headings: no standalone toggles, no arbitrary nesting.
 
 ## Stack
 
-| Concern   | Choice                                                                 |
-| --------- | ---------------------------------------------------------------------- |
-| Framework | Next.js 16, App Router, React 19, TypeScript strict                    |
-| Editor    | BlockNote (pinned exact — 0.x semver)                                  |
-| Database  | Supabase Postgres + Drizzle ORM                                        |
-| Auth      | Supabase Auth (app identity) + own Google OAuth flow (calendar access) |
-| Sync      | Google Calendar API, two-way                                           |
-| Styling   | Tailwind v4                                                            |
-| State     | React + URL params · TanStack Query for search and event bodies        |
+| Concern   | Choice                                                          |
+| --------- | --------------------------------------------------------------- |
+| Framework | Next.js 16, App Router, React 19, TypeScript strict             |
+| Editor    | BlockNote (pinned exact — 0.x semver)                           |
+| Database  | Supabase Postgres + Drizzle ORM                                 |
+| Auth      | Supabase Auth, email and password                               |
+| Styling   | Tailwind v4                                                     |
+| State     | React + URL params · TanStack Query for search and event bodies |
 
 ## Getting started
 
 ```bash
-cp .env.example .env.local   # fill in Supabase + Google credentials
+cp .env.example .env.local   # fill in Supabase credentials
 npm install
 npm run db:generate                                # emit a migration
 npx tsx scripts/apply-sql.ts drizzle/000N_name.sql # apply it
@@ -46,35 +45,14 @@ push reads it as drift and offers to disable row-level security and drop every p
 
 1. **Supabase project** — copy the URL, anon key, service role key, and the
    session-pooler `DATABASE_URL`.
-2. **Google Cloud project** — enable the Calendar API, create an OAuth client
-   with redirect URI `${NEXT_PUBLIC_APP_URL}/api/google/oauth/callback`. Domain
-   verification is required before push notifications will work.
-3. **Secrets** — `openssl rand -base64 32` for `TOKEN_ENCRYPTION_KEY`,
-   `openssl rand -hex 32` for `CRON_SECRET`.
-4. **Schedules** — after the first deploy, point `NEXT_PUBLIC_APP_URL` at the real
-   domain and run `npm run db:cron`. See below.
-
-### Scheduling
-
-The two scheduled entrypoints are driven by **pg_cron inside Supabase**, not by the
-host's cron. Vercel's Hobby plan allows one run per day and fires it anywhere inside
-the chosen hour, which is fatal rather than merely slow: watch channels are renewed
-when they come within 24h of expiry, so a daily job that drifts by an hour steps over
-the window and lets a channel die silently.
-
-```bash
-npm run db:cron   # installs pg_cron + pg_net and (re)schedules both jobs
-```
-
-| Job                        | Schedule      | Target                     |
-| -------------------------- | ------------- | -------------------------- |
-| `timeblock-sync`           | `*/5 * * * *` | `/api/sync/run`            |
-| `timeblock-renew-channels` | `0 * * * *`   | `/api/sync/renew-channels` |
-
-Each fires `net.http_get` with `Authorization: Bearer $CRON_SECRET`. The script is
-idempotent — re-run it after rotating the secret or changing the domain. It refuses
-to run against localhost. Responses land in `net._http_response` for six hours,
-which is where to look when a run seems to have gone missing.
+2. **Supabase Auth** — under Authentication → Sign In / Providers, make sure
+   **Email** is enabled. Set Authentication → URL Configuration → Site URL to the
+   deployed address and add `${NEXT_PUBLIC_APP_URL}/auth/callback` (and
+   `http://localhost:3000/auth/callback`) to the redirect allow-list.
+3. **Email confirmation** — Supabase's built-in mailer only delivers to members of
+   your Supabase organisation and is heavily rate-limited. For outside testers,
+   either turn **Confirm email** off (sign-up then signs you straight in) or
+   configure custom SMTP under Authentication → Emails.
 
 ## Scripts
 
@@ -86,31 +64,20 @@ which is where to look when a run seems to have gone missing.
 | `npm run test`                    | Vitest                                   |
 | `npm run db:generate`             | Emit a migration from `src/db/schema.ts` |
 | `npm run db:rls`                  | Apply `drizzle/rls.sql`                  |
-| `npm run db:cron`                 | Schedule the sync jobs via pg_cron       |
 | `npm run db:studio`               | Drizzle Studio                           |
 
 ## Architecture notes
 
-- **The block body is ours.** Google's `description` field is limited HTML and
-  would destroy nesting. Google receives a truncated stub plus a deep link;
-  the real document never leaves Postgres and is **never parsed back**.
-- **Two OAuth concerns, deliberately separate.** Supabase Auth handles app
-  identity. Calendar access uses our own OAuth flow, because Supabase returns
-  `provider_refresh_token` only once at sign-in and never persists it.
-- **A 410 from Google does not mean wipe local rows.** Full resync reconciles
-  through `event_links`, so block bodies survive.
-- **Watch channels expire (~7 days).** Renewed hourly by pg_cron; read the
-  expiration Google returns rather than hardcoding it.
-- **Recurrence is Google's job.** `singleEvents: true` means every occurrence
-  arrives as its own event carrying a `recurringEventId`; the series master is
-  never sent, so there is no RRULE to expand and no column to store one in.
-  Instances render with a repeat glyph and are held back from outbound writes.
+- **The block body is ours.** A BlockNote document stored as jsonb in Postgres,
+  with a derived plaintext column feeding full-text search.
+- **Every read and write scopes on the session user.** RLS is the backstop, and
+  REST grants are revoked outright (`drizzle/rls.sql`).
 
 ## Status
 
-All ten phases complete: the grid (day/3-day/week/month), the block editor with
-autosave, full-text search, Google read and incremental sync, outbound writes, push
-notifications, conflict resolution, and recurring-instance display.
+The grid (day/3-day/week/month), the block editor with autosave, full-text
+search, standalone pages and dashboards, with email-and-password accounts.
 
-Push notifications only work on a deployed HTTPS domain verified in Search Console —
-locally, every connection falls back to the five-minute poll.
+Google Calendar sync was removed so the app can be opened up to testers without a
+Google Cloud verification. Migration `0011_remove_google_sync` drops its tables and
+unschedules its pg_cron jobs; previously imported events are kept as ordinary blocks.

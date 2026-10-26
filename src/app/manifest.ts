@@ -5,8 +5,8 @@ import type { MetadataRoute } from "next";
  *
  * `scope` is the load-bearing field: iOS hands any navigation outside it back
  * to Safari, chrome and all. Everything here lives under `/`, so the scope is
- * the whole origin — including `/login` and the OAuth round trip, which would
- * otherwise drop you out of the app on the way to connecting a calendar.
+ * the whole origin — including `/login` and the email-confirmation callback,
+ * which would otherwise drop you out of the app on the way to signing in.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {

@@ -22,22 +22,6 @@ create policy events_owner on public.events
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-alter table public.google_accounts enable row level security;
-drop policy if exists google_accounts_owner on public.google_accounts;
-create policy google_accounts_owner on public.google_accounts
-  for all
-  to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
-alter table public.calendar_connections enable row level security;
-drop policy if exists calendar_connections_owner on public.calendar_connections;
-create policy calendar_connections_owner on public.calendar_connections
-  for all
-  to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
 alter table public.pages enable row level security;
 drop policy if exists pages_owner on public.pages;
 create policy pages_owner on public.pages
@@ -64,40 +48,17 @@ create policy dashboard_fields_owner on public.dashboard_fields
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-alter table public.sync_conflicts enable row level security;
-drop policy if exists sync_conflicts_owner on public.sync_conflicts;
-create policy sync_conflicts_owner on public.sync_conflicts
-  for all
-  to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
--- ---------------------------------------------------------------------------
--- Machinery tables: no user_id of their own, and no client ever needs them.
--- RLS on with zero policies = deny all, except the service role, which bypasses
--- RLS by design. That is exactly the intent.
--- ---------------------------------------------------------------------------
-
-alter table public.event_links enable row level security;
-alter table public.sync_jobs enable row level security;
-
 -- ---------------------------------------------------------------------------
 -- No table is reachable over the REST API at all.
 --
 -- Nothing in the app reads or writes through Supabase's REST layer: every query
 -- runs server-side via Drizzle on DATABASE_URL, after `requireUserId()`. The
 -- grants Supabase hands `anon` and `authenticated` by default would let a
--- signed-in user skip every server-side check — including pointing their own
--- calendar connection at somebody else's Google account row. The policies
+-- signed-in user skip every server-side check. The policies
 -- above stay as the row filter should a grant ever be reinstated on purpose.
 -- ---------------------------------------------------------------------------
 
 revoke all on public.events from anon, authenticated;
-revoke all on public.google_accounts from anon, authenticated;
-revoke all on public.calendar_connections from anon, authenticated;
 revoke all on public.pages from anon, authenticated;
 revoke all on public.dashboards from anon, authenticated;
 revoke all on public.dashboard_fields from anon, authenticated;
-revoke all on public.sync_conflicts from anon, authenticated;
-revoke all on public.event_links from anon, authenticated;
-revoke all on public.sync_jobs from anon, authenticated;

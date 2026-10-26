@@ -2,28 +2,12 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { pushEventBestEffort } from "@/lib/sync/push";
 import { requireUserId } from "@/server/auth";
 
 const MAX_TITLE_LENGTH = 500;
-
-/**
- * Sends a local write on to Google once the response is already on its way.
- *
- * The push is a token refresh plus a REST round-trip to another continent, and
- * awaiting it inline put all of that between the user releasing a block and the
- * action returning — for a result nothing renders, since failures are swallowed
- * and swept up by `pushPending` within five minutes anyway. The database write
- * is still awaited before this is scheduled, so the row a push reads is the one
- * just committed.
- */
-function push(userId: string, eventId: string) {
-  after(() => pushEventBestEffort(userId, eventId));
-}
 
 /**
  * Server Actions are a public HTTP surface, so inputs are validated here even
@@ -58,7 +42,6 @@ export async function createEvent(input: {
     })
     .returning({ id: events.id });
 
-  push(userId, row.id);
   revalidatePath("/calendar", "page");
   return row;
 }
@@ -76,7 +59,6 @@ export async function updateEventTime(input: { id: string; startsAt: Date; endsA
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  push(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
@@ -91,21 +73,15 @@ export async function updateEventTitle(input: { id: string; title: string }) {
 
   if (updated.length === 0) throw new Error("Event not found");
 
-  push(userId, input.id);
   revalidatePath("/calendar", "page");
 }
 
-/**
- * Soft delete. A tombstone rather than a real delete, so a Google full resync
- * cannot resurrect something the user removed here.
- */
+/** Soft delete. The row keeps its body until something purges it deliberately. */
 export async function deleteEvent(id: string) {
   const userId = await requireUserId();
 
-  // Guarded on the tombstone, unlike the other writes here, because re-stamping
-  // `deleted_at` on an already-deleted row keeps pushing its own clock forward
-  // and it never ages into `purgeTombstones`. A second delete is a no-op rather
-  // than an error: the block is already gone, which is what the user wanted.
+  // A second delete is a no-op rather than an error: the block is already gone,
+  // which is what the user wanted.
   const deleted = await db
     .update(events)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -114,23 +90,14 @@ export async function deleteEvent(id: string) {
 
   if (deleted.length === 0) return;
 
-  // The tombstone is what the push reads to know this is a withdrawal, so it
-  // has to be written first.
-  push(userId, id);
   revalidatePath("/calendar", "page");
 }
 
 /**
  * Pins the status window's cursor to a checklist item, or clears the override.
  *
- * Three things this deliberately does not do. It does not push to Google: the
- * cursor is a local reading position with no representation in a calendar event,
- * and sending one would be a write with nothing on the other side to receive it.
- * It does not touch `updatedAt`, because `pushPending` reads
- * `lastPushedAt < updatedAt` as "this row has unsent changes" and `reconcile`
- * uses the same timestamp to decide who wins a conflict — moving a cursor would
- * otherwise queue a spurious push and could hand a contested edit to the wrong
- * side. And it does not validate that the id exists in the body: checklist items
+ * It does not touch `updatedAt`: the cursor is a reading position, not an edit to
+ * the block. And it does not validate that the id exists in the body: checklist items
  * live in jsonb, the body may be mid-edit in another tab, and `resolveCursor`
  * already falls back when a pin goes stale. Storing an id that resolves to
  * nothing is harmless; refusing to store one the user just clicked is not.

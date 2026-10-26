@@ -107,11 +107,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     )
     .returning({ bodyRev: events.bodyRev });
 
-  // No push from here, unlike the other mutations. This fires every 800ms of
-  // typing, and the description stub is derived from the body — pushing inline
-  // would rewrite it on every keystroke burst. Moving `updated_at` past
-  // `last_pushed_at` is enough: the sweep coalesces a whole writing session
-  // into one write to Google.
   if (updated) return NextResponse.json({ bodyRev: updated.bodyRev });
 
   // No row changed. Either the event is gone, or someone else got there first
